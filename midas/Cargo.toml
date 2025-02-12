@@ -1,0 +1,10 @@
+[package]
+name = "midas"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+documentation.workspace = true
+
+[dependencies]
+dionysus = { path = "../dionysus" }
+tokio = { version = "0.2.0", features = ["full"] }

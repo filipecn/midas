@@ -1,0 +1,11 @@
+[package]
+name = "dionysus"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+documentation.workspace = true
+
+[dependencies]
+chrono = "0.4.38"
+time = "0.3.37"
+yahoo_finance_api = {"version" = "2.4.0", features = ["blocking"]}
