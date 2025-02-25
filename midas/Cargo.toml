@@ -8,3 +8,8 @@ documentation.workspace = true
 [dependencies]
 dionysus = { path = "../dionysus" }
 tokio = { version = "0.2.0", features = ["full"] }
+env_logger = "0.11.6"
+color-eyre = "0.6.3"
+crossterm = "0.28.1"
+ratatui = { version = "0.29.0", features = ["all-widgets"]}
+random_color = "1.0.0"

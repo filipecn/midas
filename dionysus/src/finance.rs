@@ -1,11 +1,21 @@
-use super::time::*;
-use std::{cmp, collections::HashMap};
+use super::time::{Date, TimeUnit};
+use ta::{Close, High, Low, Open, Volume};
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum DiError {
+    NotFound,
+    NotImplemented,
+    Message(String),
+    Error,
+    None,
+}
 
 /// A financial quote is the price at which an asset was last traded, or the
 /// price at which it can be bought or sold. It can also refer to the bid
 /// or ask price of a security.
 #[derive(Debug, Clone)]
 pub struct Quote {
+    pub symbol: String,
     /// The highest price a buyer is willing to pay.
     pub bid: f64,
     /// The lowest price a seller is willing to accept.
@@ -15,8 +25,9 @@ pub struct Quote {
 }
 
 /// Summary of price movements of an asset over a time period.
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Sample {
+    pub resolution: TimeUnit,
     pub timestamp: u64,
     pub open: f64,
     pub high: f64,
@@ -25,65 +36,50 @@ pub struct Sample {
     pub volume: u64,
 }
 
-#[derive(Debug, Clone)]
-pub struct SymbolHistory<'a> {
-    rolling_mean_data: HashMap<u32, f64>,
-    std_dev_data: HashMap<u32, f64>,
-    data: &'a [Sample],
+impl Low for Sample {
+    fn low(&self) -> f64 {
+        self.low
+    }
+}
+
+impl High for Sample {
+    fn high(&self) -> f64 {
+        self.high
+    }
+}
+
+impl Close for Sample {
+    fn close(&self) -> f64 {
+        self.close
+    }
+}
+
+impl Open for Sample {
+    fn open(&self) -> f64 {
+        self.open
+    }
+}
+
+impl Volume for Sample {
+    fn volume(&self) -> f64 {
+        self.volume as f64
+    }
+}
+
+impl Sample {
+    pub fn date(&self) -> Date {
+        Date::from_timestamp(self.timestamp)
+    }
 }
 
 impl Quote {
-    pub fn from_sample(sample: &Sample) -> Quote {
+    pub fn from_sample(symbol: &str, sample: &Sample) -> Quote {
         Quote {
+            symbol: symbol.to_string(),
             bid: (sample.open + sample.close) / 2.0,
             ask: (sample.open + sample.close) / 2.0,
-            biddate: Date::from_timestamp(sample.timestamp as i64),
-            askdate: Date::from_timestamp(sample.timestamp as i64),
-        }
-    }
-}
-
-impl<'a> SymbolHistory<'a> {
-    pub fn new(samples: &'a [Sample]) -> Self {
-        Self {
-            rolling_mean_data: HashMap::new(),
-            std_dev_data: HashMap::new(),
-            data: samples,
-        }
-    }
-    pub fn size(&self) -> usize {
-        self.data.len()
-    }
-    pub fn rolling_mean(&mut self, n: u32) -> f64 {
-        match self.rolling_mean_data.get(&n) {
-            Some(value) => value * 1.0,
-            None => {
-                let first_index = cmp::max(0, self.data.len() as i32 - n as i32) as usize;
-                let mean = self.data[first_index..]
-                    .iter()
-                    .map(|sample| sample.close)
-                    .sum::<f64>()
-                    / self.data.len() as f64;
-                self.rolling_mean_data.insert(n, mean);
-                mean
-            }
-        }
-    }
-    pub fn std_dev(&mut self, n: u32) -> f64 {
-        match self.std_dev_data.get(&n) {
-            Some(value) => value * 1.0,
-            None => {
-                let first_index = cmp::max(0, self.data.len() as i32 - n as i32) as usize;
-                let mean = self.rolling_mean(n);
-                let variance = (self.data[first_index..]
-                    .iter()
-                    .map(|sample| (sample.close - mean).powi(2))
-                    .sum::<f64>()
-                    / self.data.len() as f64)
-                    .sqrt();
-                self.std_dev_data.insert(n, variance);
-                variance
-            }
+            biddate: Date::from_timestamp(sample.timestamp),
+            askdate: Date::from_timestamp(sample.timestamp),
         }
     }
 }
