@@ -1,19 +1,21 @@
-use super::finance::{DiError, Quote};
+use super::finance::DiError;
 use super::time::Period;
-use crate::data::{BrownianMotionProvider, HistoricalData, YahooProvider};
+use crate::brownian::BrownianMotionMarket;
+use crate::historical_data::HistoricalData;
 use crate::strategy::Strategy;
+use crate::yahoo::YahooMarket;
 
 pub struct Backtrace {}
 
 pub fn backtrace(symbol: &str, period: &Period, strategy: &mut Strategy) -> Result<(), DiError> {
     match symbol {
         "brownian" => {
-            let mut history = BrownianMotionProvider::new();
+            let mut history = BrownianMotionMarket::default();
             //history.fetch_one(symbol, &period)?;
             return run_backtrace(&symbol, &period, strategy, &history);
         }
         &_ => {
-            let mut history = YahooProvider::new();
+            let mut history = YahooMarket::default();
             //history.fetch_one(symbol, &period)?;
             return run_backtrace(&symbol, &period, strategy, &history);
         }

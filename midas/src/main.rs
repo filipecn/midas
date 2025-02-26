@@ -4,6 +4,7 @@ use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode};
 use dionysus::ta::match_indicator_from_text;
 use dionysus::time::TimeUnit;
+use market::MarketWindow;
 use ratatui::{
     layout::{Constraint, Layout, Position},
     DefaultTerminal, Frame,
@@ -11,6 +12,7 @@ use ratatui::{
 
 mod command_input;
 mod common;
+mod market;
 mod stock_graph;
 mod symbol_tabs;
 mod wallet;
@@ -36,6 +38,7 @@ pub struct App {
     command: CommandInput,
     input_mode: InputMode,
     wallet: WalletWindow,
+    market: MarketWindow,
 }
 
 impl App {
@@ -75,14 +78,14 @@ impl App {
 
     fn draw(&mut self, frame: &mut Frame) {
         //  -----------------------------------------------------------
-        // |           SYMBOLS                        |                |
-        // |------------------------------------------|   WALLET       |
+        // |           SYMBOLS                        |    BOOK        |
+        // |------------------------------------------|                |
+        // |                                          |----------------|
+        // |             CHART                        |    SYMBOLS     |
         // |                                          |                |
-        // |             CHART                        |                |
+        // |                                          |----------------|
         // |                                          |                |
-        // |                                          |                |
-        // |                                          |                |
-        // |                                          |                |
+        // |                                          |     WALLET     |
         // |------------------------------------------|                |
         // |            COMMAND                       |                |
         //  -----------------------------------------------------------
@@ -94,9 +97,12 @@ impl App {
             Constraint::Length(4),
         ]);
 
-        let [l00_area, wallet_area] = layout_0.areas(frame.area());
+        let layout_01 = Layout::vertical([Constraint::Percentage(30), Constraint::Min(0)]);
+
+        let [l00_area, l01_area] = layout_0.areas(frame.area());
 
         let [symbol_tabs_area, chart_area, command_area] = layout_00.areas(l00_area);
+        let [wallet_area, market_area] = layout_01.areas(l01_area);
 
         frame.render_widget(&self.symbol_tabs, symbol_tabs_area);
         if self.stock_views.len() > self.symbol_tabs.current() {
@@ -112,6 +118,7 @@ impl App {
             command_area.y + 1,
         ));
         self.wallet.render(wallet_area, frame.buffer_mut());
+        self.market.render(market_area, frame.buffer_mut());
     }
 
     fn handle_events(&mut self) -> io::Result<()> {

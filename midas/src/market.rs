@@ -13,15 +13,11 @@ use ratatui::{
         Block, Borders, HighlightSpacing, List, ListItem, ListState, Padding, Paragraph,
         StatefulWidget, Widget, Wrap,
     },
-    DefaultTerminal,
 };
 
-const TODO_HEADER_STYLE: Style = Style::new().fg(SLATE.c100).bg(BLUE.c800);
-const NORMAL_ROW_BG: Color = SLATE.c950;
-const ALT_ROW_BG_COLOR: Color = SLATE.c900;
-const SELECTED_STYLE: Style = Style::new().bg(SLATE.c800).add_modifier(Modifier::BOLD);
-const TEXT_FG_COLOR: Color = SLATE.c200;
-const COMPLETED_TEXT_FG_COLOR: Color = GREEN.c500;
+use crate::common::{LOSS_COLOR, NORMAL_BG, NORMAL_HEADER_STYLE, PROFIT_COLOR, SELECTED_STYLE};
+use dionysus::binance::BinanceMarket;
+use dionysus::market::Market;
 
 struct BalanceList {
     items: Vec<BalanceItem>,
@@ -30,8 +26,9 @@ struct BalanceList {
 
 #[derive(Debug)]
 struct BalanceItem {
-    asset: String,
-    free: f64,
+    symbol: String,
+    price: f64,
+    change: f64,
     status: Status,
 }
 
@@ -41,16 +38,15 @@ enum Status {
     Loss,
 }
 
-use dionysus::wallet::BinanceWallet;
-
-pub struct WalletWindow {
-    binance_wallet: BinanceWallet,
+pub struct MarketWindow {
+    binance_market: BinanceMarket,
     balance_list: BalanceList,
 }
-impl Default for WalletWindow {
+
+impl Default for MarketWindow {
     fn default() -> Self {
         let mut s = Self {
-            binance_wallet: BinanceWallet::default(),
+            binance_market: BinanceMarket::default(),
             balance_list: BalanceList {
                 items: Vec::default(),
                 state: ListState::default(),
@@ -61,20 +57,23 @@ impl Default for WalletWindow {
     }
 }
 
-impl WalletWindow {
+impl MarketWindow {
     pub fn update(&mut self) {
-        match self.binance_wallet.account.get_account() {
-            Ok(answer) => {
+        match self.binance_market.get_all_24h_price_stats("USDT") {
+            Ok(prices) => {
                 self.balance_list = BalanceList {
-                    items: answer
-                        .balances
+                    items: prices
                         .iter()
                         .map(|x| BalanceItem {
-                            asset: x.asset.clone(),
-                            free: x.free.parse::<f64>().unwrap_or(0.0),
-                            status: Status::Profit,
+                            symbol: x.symbol.clone(),
+                            price: x.last_price,
+                            change: x.price_change_percent,
+                            status: if x.price_change_percent > 0.0 {
+                                Status::Profit
+                            } else {
+                                Status::Loss
+                            },
                         })
-                        .filter(|x| x.free > 0.0)
                         .collect(),
                     state: ListState::default(),
                 };
@@ -88,11 +87,11 @@ impl WalletWindow {
         Self: Sized,
     {
         let block = Block::new()
-            .title(Line::raw("WALLET").centered())
+            .title(Line::raw("MARKET (USDT)").centered())
             .borders(Borders::ALL)
             .border_set(symbols::border::EMPTY)
-            .border_style(TODO_HEADER_STYLE)
-            .bg(NORMAL_ROW_BG);
+            .border_style(NORMAL_HEADER_STYLE)
+            .bg(NORMAL_BG);
 
         // Iterate through all elements in the `items` and stylize them.
         let items: Vec<ListItem> = self
@@ -121,15 +120,13 @@ impl WalletWindow {
 
 impl From<&BalanceItem> for ListItem<'_> {
     fn from(value: &BalanceItem) -> Self {
+        let txt = format!(
+            " {:10} {: >12} ({:.2}%)",
+            value.symbol, value.price, value.change
+        );
         let line = match value.status {
-            Status::Profit => Line::styled(
-                format!(" {:10} {: >12}", value.asset, value.free),
-                TEXT_FG_COLOR,
-            ),
-            Status::Loss => Line::styled(
-                format!(" {} {}", value.asset, value.free),
-                COMPLETED_TEXT_FG_COLOR,
-            ),
+            Status::Profit => Line::styled(txt, PROFIT_COLOR),
+            Status::Loss => Line::styled(txt, LOSS_COLOR),
         };
         ListItem::new(line)
     }

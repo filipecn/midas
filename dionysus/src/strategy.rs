@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::data::HistoricalData;
 use crate::finance::{DiError, Quote};
+use crate::historical_data::HistoricalData;
 use crate::oracles::{Oracle, Signal};
 use crate::time::TimeUnit;
 

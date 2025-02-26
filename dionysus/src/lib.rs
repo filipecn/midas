@@ -1,8 +1,14 @@
 pub mod backtrace;
-pub mod data;
 pub mod finance;
+pub mod historical_data;
+pub mod market;
 pub mod oracles;
 pub mod strategy;
 pub mod ta;
 pub mod time;
 pub mod wallet;
+
+pub mod binance;
+pub mod brownian;
+pub mod cache;
+pub mod yahoo;

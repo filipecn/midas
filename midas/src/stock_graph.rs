@@ -14,16 +14,18 @@ use ratatui::{
 
 use crate::common::Interactible;
 use dionysus::{
-    data::{BinanceProvider, BrownianMotionProvider, HistoricalData},
+    binance::BinanceMarket,
+    brownian::BrownianMotionMarket,
     finance::{DiError, Sample},
+    historical_data::HistoricalData,
     ta::{Indicator, IndicatorData},
     time::{TimeUnit, TimeWindow},
 };
 
 fn get_provider(symbol: &str) -> Box<dyn HistoricalData> {
     match symbol {
-        "brownian" => Box::new(BrownianMotionProvider::new()),
-        &_ => Box::new(BinanceProvider::new()),
+        "brownian" => Box::new(BrownianMotionMarket::default()),
+        &_ => Box::new(BinanceMarket::default()),
     }
 }
 
