@@ -6,6 +6,7 @@ pub mod oracles;
 pub mod strategy;
 pub mod ta;
 pub mod time;
+pub mod utils;
 pub mod wallet;
 
 pub mod binance;

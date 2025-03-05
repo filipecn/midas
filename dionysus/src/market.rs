@@ -18,11 +18,37 @@ pub struct PairPriceStats {
 }
 
 pub trait Market {
+    fn get_price(&self, symbol: &str, currency: &str) -> Result<f64, DiError>;
+    fn get_24h_price(&self, symbol: &str, currency: &str) -> Result<PairPriceStats, DiError>;
     fn get_all_prices(&self, currency: &str) -> Result<Vec<PairPrice>, DiError>;
     fn get_all_24h_price_stats(&self, currency: &str) -> Result<Vec<PairPriceStats>, DiError>;
 }
 
 impl Market for BinanceMarket {
+    fn get_price(&self, symbol: &str, currency: &str) -> Result<f64, DiError> {
+        let mut pair: String = String::from(symbol);
+        pair.push_str(currency);
+        match self.market.get_price(pair) {
+            Ok(answer) => Ok(answer.price),
+            Err(e) => Err(DiError::Message(format!("{:?}", e))),
+        }
+    }
+
+    fn get_24h_price(&self, symbol: &str, currency: &str) -> Result<PairPriceStats, DiError> {
+        let mut pair: String = String::from(symbol);
+        pair.push_str(currency);
+        match self.market.get_24h_price_stats(pair) {
+            Ok(stat) => Ok(PairPriceStats {
+                symbol: String::from(symbol),
+                currency: String::from(currency),
+                last_price: stat.last_price,
+                volume: stat.volume,
+                price_change_percent: stat.price_change_percent.parse::<f64>().unwrap_or(0.0),
+            }),
+            Err(e) => Err(DiError::Message(format!("{:?}", e))),
+        }
+    }
+
     fn get_all_prices(&self, currency: &str) -> Result<Vec<PairPrice>, DiError> {
         match self.market.get_all_prices() {
             Ok(answer) => {

@@ -1,14 +1,16 @@
+use crate::common;
+use crate::common::{LOSS_COLOR, PROFIT_COLOR};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use random_color::RandomColor;
 use ratatui::{
     buffer::Buffer,
-    layout::Rect,
-    style::{Color, Styled, Stylize},
+    layout::{Constraint, Flex, Layout, Rect},
+    style::{Color, Styled},
     symbols::{self},
-    text,
+    text::Line,
     widgets::{
         canvas::{self, Canvas, Context, Rectangle},
-        Block, Widget,
+        Block, Paragraph, Widget,
     },
 };
 
@@ -16,14 +18,14 @@ use crate::common::Interactible;
 use dionysus::{
     binance::BinanceMarket,
     brownian::BrownianMotionMarket,
-    finance::{DiError, Sample},
+    finance::{DiError, Sample, Token},
     historical_data::HistoricalData,
     ta::{Indicator, IndicatorData},
     time::{TimeUnit, TimeWindow},
 };
 
-fn get_provider(symbol: &str) -> Box<dyn HistoricalData> {
-    match symbol {
+fn get_provider(token: &Token) -> Box<dyn HistoricalData> {
+    match token.get_symbol().as_str() {
         "brownian" => Box::new(BrownianMotionMarket::default()),
         &_ => Box::new(BinanceMarket::default()),
     }
@@ -107,7 +109,7 @@ impl GraphElement for Curve {
 
 #[derive(Default)]
 pub struct Samples {
-    pub symbol: String,
+    pub token: Token,
     pub data: Vec<Sample>,
     data_bounds: [[f64; 2]; 2],
     indicators: Vec<(Indicator, Curve)>,
@@ -123,9 +125,9 @@ impl GraphElement for Samples {
         let mut i = 0;
         for sample in &self.data {
             let candle_color = if sample.close > sample.open {
-                Color::Green
+                PROFIT_COLOR
             } else {
-                Color::Red
+                LOSS_COLOR
             };
 
             let x = domain.dx * i as f64;
@@ -163,27 +165,15 @@ impl GraphElement for Samples {
         for (_, curve) in &self.indicators {
             curve.draw(domain, ctx);
         }
-        // legend
-        let y_step = domain.size(1) * 0.05;
-        let x_offset = domain.bounds[0][1] - domain.size(0) * 0.1;
-        let y_offset = domain.bounds[1][1] - domain.size(1) * 0.1;
-        for (i, (indicator, curve)) in self.indicators.iter().enumerate() {
-            let y = y_offset - y_step * i as f64;
-            ctx.print(
-                x_offset,
-                y,
-                format!("{:?}", indicator.to_string()).set_style(curve.color),
-            );
-        }
     }
 }
 
 impl Samples {
-    pub fn load(&mut self, symbol: &str, time_window: &TimeWindow) -> Result<(), DiError> {
-        let mut provider = get_provider(symbol);
-        match provider.get_last(symbol, &time_window) {
+    pub fn load(&mut self, token: &Token, time_window: &TimeWindow) -> Result<(), DiError> {
+        let mut provider = get_provider(token);
+        match provider.get_last(token.to_string().to_uppercase().as_str(), &time_window) {
             Ok(samples) => {
-                self.symbol = symbol.to_string();
+                self.token = token.clone();
                 self.data.clear();
                 for sample in samples {
                     self.data.push(sample.clone());
@@ -275,9 +265,29 @@ pub struct StockGraph {
     samples: Samples,
     window: ChartDomain,
     zooming: bool,
+    focus: bool,
 }
 
 impl StockGraph {
+    pub fn update_with(&mut self, token: &Token, sample: &Sample) {
+        if !self.samples.data.is_empty()
+            && self.samples.data.last().unwrap().resolution != sample.resolution
+        {
+            return;
+        }
+        if *token == self.samples.token {
+            if self.samples.data.is_empty()
+                || self.samples.data.last().unwrap().timestamp != sample.timestamp
+            {
+                self.samples.data.push(sample.clone());
+            } else {
+                let last_i = self.samples.data.len() - 1;
+                self.samples.data[last_i] = sample.clone();
+            }
+            self.samples.compute_indicators();
+        }
+    }
+
     pub fn add_indicator(&mut self, indicator: Indicator) {
         self.samples.add_indicator(indicator);
     }
@@ -289,9 +299,9 @@ impl StockGraph {
         self.window.bounds[0][1] *= self.window.dx;
     }
 
-    pub fn load(&mut self, symbol: &str, resolution: &TimeUnit, n: usize) -> Result<(), DiError> {
+    pub fn load(&mut self, token: &Token, resolution: &TimeUnit, n: usize) -> Result<(), DiError> {
         self.samples.load(
-            symbol,
+            token,
             &TimeWindow {
                 resolution: resolution.clone(),
                 count: n as i64,
@@ -303,7 +313,7 @@ impl StockGraph {
 
     pub fn set_resolution(&mut self, resolution: &TimeUnit) -> Result<(), DiError> {
         self.load(
-            self.samples.symbol.clone().as_str(),
+            &self.samples.token.clone(),
             resolution,
             self.samples.data.len(),
         )?;
@@ -327,6 +337,29 @@ impl StockGraph {
         self.window.bounds[0][1] -= x_zoom;
         self.window.bounds[1][0] += y_zoom;
         self.window.bounds[1][1] -= y_zoom;
+    }
+
+    pub fn legend_area(&self, area: Rect) -> Option<Rect> {
+        if !self.samples.indicators.is_empty() {
+            let vertical = Layout::vertical([Constraint::Percentage(20)]).flex(Flex::Start);
+            let horizontal = Layout::horizontal([Constraint::Percentage(10)]).flex(Flex::End);
+            let [area] = vertical.areas(area);
+            let [area] = horizontal.areas(area);
+            Some(area)
+        } else {
+            None
+        }
+    }
+
+    pub fn draw_legend(&self, area: Rect, buf: &mut Buffer) {
+        let mut lines: Vec<Line> = Vec::new();
+        for (_, (indicator, curve)) in self.samples.indicators.iter().enumerate() {
+            lines.push(Line::from(indicator.to_string()).set_style(curve.color));
+        }
+
+        Paragraph::new(lines)
+            .block(Block::bordered().title("Indicators"))
+            .render(area, buf);
     }
 }
 
@@ -372,7 +405,9 @@ impl Interactible for StockGraph {
         }
         consumed
     }
-    fn set_focus(&mut self, _focus: bool) {}
+    fn set_focus(&mut self, focus: bool) {
+        self.focus = focus;
+    }
 }
 
 impl Widget for &StockGraph {
@@ -382,7 +417,7 @@ impl Widget for &StockGraph {
         title.push_str("@");
         title.push_str(self.samples.data[0].resolution.name().as_str());
         Canvas::default()
-            .block(Block::bordered().title(text::Line::from(title).cyan().bold().centered()))
+            .block(common::block(title.as_str()).style(common::focus_style(self.focus)))
             .marker(symbols::Marker::Braille)
             .x_bounds(self.window.bounds[0])
             .y_bounds(self.window.bounds[1])

@@ -1,5 +1,10 @@
-use crate::finance::{DiError, Quote, Sample};
-use log::*;
+use slog::slog_info;
+use slog_scope;
+
+use crate::{
+    finance::{DiError, Quote, Sample},
+    INFO,
+};
 use std::{cmp, collections::HashMap};
 
 #[derive(Debug, Clone)]
@@ -95,9 +100,22 @@ impl Oracle for MeanReversionOracle {
         let std_dev = ta.std_dev(history.len() as u32);
         let mean = ta.rolling_mean(history.len() as u32);
 
-        info!("MeanReversionStrategy handling quote: {:?}", quote);
-        info!("Px: {}; Mean: {}; Std Dev: {}", quote.ask, mean, std_dev);
-        info!(
+        INFO!("test {:?}", quote);
+
+        slog_info!(
+            slog_scope::logger(),
+            "MeanReversionStrategy handling quote: {:?}",
+            quote
+        );
+        slog_info!(
+            slog_scope::logger(),
+            "Px: {}; Mean: {}; Std Dev: {}",
+            quote.ask,
+            mean,
+            std_dev
+        );
+        slog_info!(
+            slog_scope::logger(),
             "quote.ask: {}; (mean - 2.0 * std_dev): {}",
             quote.ask,
             mean - 2.0 * std_dev
@@ -107,13 +125,21 @@ impl Oracle for MeanReversionOracle {
         let sell = quote.ask > mean + 2.0 * std_dev;
 
         if buy {
-            info!("***Buy signal for {}***", quote.symbol);
+            slog_info!(
+                slog_scope::logger(),
+                "***Buy signal for {}***",
+                quote.symbol
+            );
             Ok(Signal::Buy)
         } else if sell {
-            info!("***Sell signal for {}***", quote.symbol);
+            slog_info!(
+                slog_scope::logger(),
+                "***Sell signal for {}***",
+                quote.symbol
+            );
             Ok(Signal::Sell)
         } else {
-            info!("No signal for {}", quote.symbol);
+            slog_info!(slog_scope::logger(), "No signal for {}", quote.symbol);
             Ok(Signal::None)
         }
     }

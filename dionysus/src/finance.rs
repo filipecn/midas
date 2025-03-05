@@ -10,6 +10,38 @@ pub enum DiError {
     None,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum Token {
+    Symbol(String),
+    Currency(String),
+    Pair((String, String)),
+    #[default]
+    None,
+}
+
+impl Token {
+    pub fn pair(symbol: &str, currency: &str) -> Token {
+        Token::Pair((symbol.to_string(), currency.to_string()))
+    }
+
+    pub fn to_string(&self) -> String {
+        match self {
+            Self::Pair((symbol, currency)) => format!("{}{}", symbol, currency),
+            Self::Symbol(symbol) => symbol.clone(),
+            Self::Currency(currency) => currency.clone(),
+            Self::None => "NONE".to_string(),
+        }
+    }
+
+    pub fn get_symbol(&self) -> String {
+        match self {
+            Self::Pair((symbol, _)) => symbol.clone(),
+            Self::Symbol(symbol) => symbol.clone(),
+            _ => String::new(),
+        }
+    }
+}
+
 /// A financial quote is the price at which an asset was last traded, or the
 /// price at which it can be bought or sold. It can also refer to the bid
 /// or ask price of a security.

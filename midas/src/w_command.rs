@@ -1,9 +1,9 @@
+use crate::common;
 use crossterm::event::{KeyCode, KeyEventKind};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
-    style::{Color, Style},
-    widgets::{Block, Paragraph, Widget},
+    widgets::{Paragraph, Widget},
 };
 
 use crate::common::Interactible;
@@ -112,12 +112,8 @@ impl Interactible for CommandInput {
 impl Widget for &CommandInput {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let input = Paragraph::new(self.input.as_str())
-            .style(Style::default().fg(if self.focus {
-                Color::Yellow
-            } else {
-                Color::White
-            }))
-            .block(Block::bordered().title("Command"));
+            .style(common::focus_style(self.focus))
+            .block(common::block("COMMAND"));
         input.render(area, buf);
     }
 }

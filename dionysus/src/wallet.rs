@@ -35,7 +35,7 @@ mod tests {
 
     #[test]
     fn test_binance_wallet() {
-        let mut wallet = BinanceWallet::new();
+        let wallet = BinanceWallet::new();
 
         match wallet.account.get_account() {
             Ok(answer) => println!("{:?}", answer.balances),
