@@ -1,9 +1,21 @@
-use crate::finance::{DiError, Sample};
+use crate::finance::{DiError, Sample, Token};
 use crate::time::{Period, TimeUnit, TimeWindow};
 use std::collections::HashMap;
 
 pub type SampleCache = HashMap<TimeUnit, Vec<Sample>>;
 pub type SymbolCache = HashMap<String, SampleCache>;
+
+macro_rules! KEY {
+    ($t:expr) => {
+        $t.to_string().to_uppercase()
+    };
+}
+
+macro_rules! KEY_STR {
+    ($t:expr) => {
+        $t.to_string().to_uppercase().as_str()
+    };
+}
 
 #[derive(Default)]
 pub struct Cache {
@@ -11,8 +23,8 @@ pub struct Cache {
 }
 
 impl Cache {
-    pub fn contains(&self, symbol: &str, period: &Period) -> bool {
-        if let Some(unit_cache) = self.data.get(symbol) {
+    pub fn contains(&self, token: &Token, period: &Period) -> bool {
+        if let Some(unit_cache) = self.data.get(KEY_STR!(token)) {
             if let Some(cache) = unit_cache.get(&period.duration.resolution) {
                 if cache.is_empty() {
                     return false;
@@ -28,10 +40,10 @@ impl Cache {
         }
         false
     }
-    pub fn read(&self, symbol: &str, duration: &TimeWindow) -> Result<&[Sample], DiError> {
+    pub fn read(&self, token: &Token, duration: &TimeWindow) -> Result<&[Sample], DiError> {
         match self
             .data
-            .get(symbol)
+            .get(KEY_STR!(token))
             .and_then(|unit_cache| unit_cache.get(&duration.resolution))
         {
             Some(samples) => {
@@ -41,19 +53,22 @@ impl Cache {
             None => return Err(DiError::NotFound),
         }
     }
-    pub fn write(&mut self, symbol: &str, samples: &[Sample]) -> Result<(), DiError> {
+    pub fn write(&mut self, token: &Token, samples: &[Sample]) -> Result<(), DiError> {
         let v: Vec<Sample> = samples.iter().map(|sample| sample.clone()).collect();
         if v.is_empty() {
             return Ok(());
         }
         let resolution = v[0].resolution.clone();
-        match &mut self.data.get_mut(symbol) {
+        match &mut self.data.get_mut(KEY_STR!(token)) {
             Some(unit_cache) => match unit_cache.get_mut(&resolution) {
                 Some(cache) => {
-                    if v[0].timestamp <= cache[0].timestamp {
-                        return Err(DiError::NotImplemented);
-                    } else {
-                        for sample in v {
+                    for sample in v {
+                        let last_index = cache.len() - 1;
+                        if sample.timestamp < cache[last_index].timestamp {
+                            return Err(DiError::NotImplemented);
+                        } else if sample.timestamp == cache[last_index].timestamp {
+                            cache[last_index] = sample;
+                        } else {
                             cache.push(sample);
                         }
                     }
@@ -65,7 +80,7 @@ impl Cache {
             None => {
                 let mut sample_cache = SampleCache::new();
                 sample_cache.insert(resolution, v);
-                self.data.insert(symbol.to_string(), sample_cache);
+                self.data.insert(KEY!(token), sample_cache);
             }
         }
         Ok(())

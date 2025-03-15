@@ -1,16 +1,13 @@
 use crate::common;
-use crossterm::event::{KeyCode, KeyEventKind};
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
     widgets::{Paragraph, Widget},
 };
 
-use crate::common::Interactible;
-
 #[derive(Default)]
 pub struct CommandInput {
-    focus: bool,
+    pub focus: bool,
     /// Current value of the input box
     input: String,
     /// Position of cursor in the editor area.
@@ -30,17 +27,17 @@ impl CommandInput {
         self.character_index as u16
     }
 
-    fn move_cursor_left(&mut self) {
+    pub fn move_cursor_left(&mut self) {
         let cursor_moved_left = self.character_index.saturating_sub(1);
         self.character_index = self.clamp_cursor(cursor_moved_left);
     }
 
-    fn move_cursor_right(&mut self) {
+    pub fn move_cursor_right(&mut self) {
         let cursor_moved_right = self.character_index.saturating_add(1);
         self.character_index = self.clamp_cursor(cursor_moved_right);
     }
 
-    fn enter_char(&mut self, new_char: char) {
+    pub fn enter_char(&mut self, new_char: char) {
         let index = self.byte_index();
         self.input.insert(index, new_char);
         self.move_cursor_right();
@@ -58,7 +55,7 @@ impl CommandInput {
             .unwrap_or(self.input.len())
     }
 
-    fn delete_char(&mut self) {
+    pub fn delete_char(&mut self) {
         let is_not_cursor_leftmost = self.character_index != 0;
         if is_not_cursor_leftmost {
             // Method "remove" is not used on the saved text for deleting the selected char.
@@ -86,26 +83,6 @@ impl CommandInput {
 
     fn reset_cursor(&mut self) {
         self.character_index = 0;
-    }
-}
-
-impl Interactible for CommandInput {
-    fn handle_key_event(&mut self, key_event: &crossterm::event::KeyEvent) -> bool {
-        let mut consumed = true;
-        if key_event.kind == KeyEventKind::Press {
-            match key_event.code {
-                //KeyCode::Enter => self.submit_message(),
-                KeyCode::Char(to_insert) => self.enter_char(to_insert),
-                KeyCode::Backspace => self.delete_char(),
-                KeyCode::Left => self.move_cursor_left(),
-                KeyCode::Right => self.move_cursor_right(),
-                _ => consumed = false,
-            };
-        }
-        consumed
-    }
-    fn set_focus(&mut self, focus: bool) {
-        self.focus = focus;
     }
 }
 

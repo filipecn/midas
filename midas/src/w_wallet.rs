@@ -1,10 +1,12 @@
 use std::cmp::Ordering;
 
 use crate::common;
+use dionysus::{wallet::Wallet, ERROR};
 use ratatui::{
     text::Line,
     widgets::{HighlightSpacing, List, ListItem, ListState, StatefulWidget},
 };
+use slog::slog_error;
 
 struct BalanceList {
     items: Vec<BalanceItem>,
@@ -105,7 +107,7 @@ impl WalletWindow {
                     change: compute_change_pct(initial, current),
                 };
             }
-            Err(e) => println!("Error: {:?}", e),
+            Err(e) => ERROR!("{:?}", e),
         }
     }
 

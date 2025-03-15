@@ -84,7 +84,7 @@ impl Hash for TimeUnit {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Default, Clone)]
 pub struct TimeWindow {
     pub resolution: TimeUnit,
     pub count: i64,

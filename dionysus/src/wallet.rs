@@ -1,8 +1,24 @@
+use crate::finance::{DiError, Position, Token};
 use binance::account::Account;
 use binance::api::*;
+use std::collections::HashMap;
 use std::fs::read_to_string;
 
-pub trait Wallet {}
+#[derive(Debug, Default)]
+pub struct Asset {
+    symbol: Token,
+    free: f64,
+}
+
+pub struct Wallet {
+    capital: HashMap<Token, f64>,
+    positions: HashMap<Token, Position>,
+    balance: HashMap<Token, Asset>,
+}
+
+pub trait DigitalWallet {
+    fn get_balance(&self) -> Result<HashMap<Token, Asset>, DiError>;
+}
 
 pub struct BinanceWallet {
     pub account: Account,
@@ -25,6 +41,31 @@ impl BinanceWallet {
         let api_key = Some(keys[1].clone().into());
         Self {
             account: Binance::new(api_key, secret_key),
+        }
+    }
+}
+
+impl DigitalWallet for BinanceWallet {
+    fn get_balance(&self) -> Result<HashMap<Token, Asset>, DiError> {
+        match self.account.get_account() {
+            Ok(answer) => {
+                let items: HashMap<Token, Asset> = answer
+                    .balances
+                    .into_iter()
+                    .map(|x| {
+                        (
+                            Token::Symbol(x.asset.clone()),
+                            Asset {
+                                symbol: Token::Symbol(x.asset.clone()),
+                                free: x.free.parse::<f64>().unwrap_or(0.0),
+                            },
+                        )
+                    })
+                    .filter(|(_, a)| a.free > 0.0)
+                    .collect();
+                Ok(items)
+            }
+            Err(e) => Err(DiError::Message(format!("{:?}", e))),
         }
     }
 }

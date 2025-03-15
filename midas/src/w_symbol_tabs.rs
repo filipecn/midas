@@ -1,4 +1,3 @@
-use crossterm::event::{KeyCode, KeyEventKind, KeyModifiers};
 use dionysus::finance::Token;
 use ratatui::{
     buffer::Buffer,
@@ -7,8 +6,6 @@ use ratatui::{
     widgets::{Tabs, Widget},
 };
 use std::iter::Iterator;
-
-use crate::common::Interactible;
 
 #[derive(Default)]
 pub struct SymbolTabs {
@@ -26,30 +23,34 @@ impl SymbolTabs {
     }
 
     pub fn add(&mut self, token: &Token) {
-        if !self.tabs.contains(&token) {
-            self.tabs.push(token.clone());
-            self.selected_tab = self.tabs.len() - 1;
+        for sta in &self.tabs {
+            if *sta == *token {
+                return;
+            }
         }
+
+        self.tabs.push(token.clone());
+        self.selected_tab = self.tabs.len() - 1;
     }
 
     pub fn remove(&mut self, token: &Token) {
         let index = self
             .tabs
             .iter()
-            .position(|x| x == token)
+            .position(|x| *x == *token)
             .unwrap_or(self.tabs.len());
         if index < self.tabs.len() {
             self.tabs.remove(index);
         }
     }
 
-    fn next(&mut self) {
+    pub fn next(&mut self) {
         if !self.tabs.is_empty() {
             self.selected_tab = (self.selected_tab + 1) % self.tabs.len();
         }
     }
 
-    fn previous(&mut self) {
+    pub fn previous(&mut self) {
         if !self.tabs.is_empty() {
             if self.selected_tab == 0 {
                 self.selected_tab = self.tabs.len() - 1;
@@ -62,26 +63,14 @@ impl SymbolTabs {
     pub fn tab_count(&self) -> usize {
         self.tabs.len()
     }
-}
 
-impl Interactible for SymbolTabs {
-    fn handle_key_event(&mut self, key_event: &crossterm::event::KeyEvent) -> bool {
-        let mut consumed = true;
-        if key_event.kind == KeyEventKind::Press {
-            match key_event.code {
-                KeyCode::Char('t') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                    if key_event.modifiers.contains(KeyModifiers::SHIFT) {
-                        self.previous();
-                    } else {
-                        self.next();
-                    }
-                }
-                _ => consumed = false,
-            };
+    pub fn tab(&self, i: usize) -> Option<Token> {
+        if i < self.tabs.len() {
+            Some(self.tabs[i].clone())
+        } else {
+            None
         }
-        consumed
     }
-    fn set_focus(&mut self, _focus: bool) {}
 }
 
 impl Widget for &SymbolTabs {
@@ -89,7 +78,11 @@ impl Widget for &SymbolTabs {
         if self.tabs.is_empty() {
             return;
         }
-        let tab_titles: Vec<String> = self.tabs.iter().map(|x| x.to_string()).collect();
+        let tab_titles: Vec<String> = self
+            .tabs
+            .iter()
+            .map(|x| format!("{:?}/{:?}", x.get_symbol(), x.get_currency()))
+            .collect();
         let highlight_style = (Color::default(), tailwind::BLUE.c700);
         let selected_tab_index = self.selected_tab as usize;
         Tabs::new(tab_titles)

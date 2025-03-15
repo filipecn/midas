@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use super::time::{Date, TimeUnit};
 use ta::{Close, High, Low, Open, Volume};
 
@@ -40,6 +42,28 @@ impl Token {
             _ => String::new(),
         }
     }
+
+    pub fn get_currency(&self) -> String {
+        match self {
+            Self::Pair((_, currency)) => currency.clone(),
+            Self::Currency(currency) => currency.clone(),
+            _ => String::new(),
+        }
+    }
+}
+
+impl Hash for Token {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.to_string().hash(state);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Position {
+    pub token: Token,
+    pub quantity: f64,
+    pub price: f64,
+    pub date: Date,
 }
 
 /// A financial quote is the price at which an asset was last traded, or the
@@ -47,7 +71,7 @@ impl Token {
 /// or ask price of a security.
 #[derive(Debug, Clone)]
 pub struct Quote {
-    pub symbol: String,
+    pub token: Token,
     /// The highest price a buyer is willing to pay.
     pub bid: f64,
     /// The lowest price a seller is willing to accept.
@@ -105,11 +129,11 @@ impl Sample {
 }
 
 impl Quote {
-    pub fn from_sample(symbol: &str, sample: &Sample) -> Quote {
+    pub fn from_sample(token: &Token, sample: &Sample) -> Quote {
         Quote {
-            symbol: symbol.to_string(),
-            bid: (sample.open + sample.close) / 2.0,
-            ask: (sample.open + sample.close) / 2.0,
+            token: token.clone(),
+            bid: sample.close,
+            ask: sample.close,
             biddate: Date::from_timestamp(sample.timestamp),
             askdate: Date::from_timestamp(sample.timestamp),
         }

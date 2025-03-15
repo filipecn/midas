@@ -8,7 +8,7 @@ use crate::time::TimeUnit;
 type Wallet = HashMap<String, f64>;
 
 pub struct Strategy {
-    pub oracles: Vec<Box<dyn Oracle>>,
+    pub oracles: Vec<Oracle>,
 
     time_resolution: TimeUnit,
     _wallet: Wallet,

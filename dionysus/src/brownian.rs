@@ -1,5 +1,5 @@
 use crate::cache::Cache;
-use crate::finance::Quote;
+use crate::finance::{Quote, Token};
 use crate::time::{Date, TimeWindow};
 use rand::thread_rng;
 use rand_distr::{Distribution, Normal};
@@ -45,7 +45,7 @@ pub fn generate_brownian_data(mu: f64, sigma: f64, duration: &TimeWindow) -> Vec
         let price = old_price * (drift + vol_sqrt_dt * z).exp();
         old_price = price;
         let quote = Quote {
-            symbol: "brownian".to_string(),
+            token: Token::Symbol("brownian".to_string()),
             biddate: quote_date.clone(),
             askdate: quote_date.clone(),
             bid: price,

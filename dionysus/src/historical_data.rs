@@ -1,6 +1,6 @@
 use crate::binance::BinanceMarket;
 use crate::brownian::{generate_brownian_data, BrownianMotionMarket};
-use crate::finance::{DiError, Quote, Sample};
+use crate::finance::{DiError, Quote, Sample, Token};
 use crate::time::{TimeUnit, TimeWindow};
 use crate::yahoo::YahooMarket;
 use std::cmp::Ordering;
@@ -45,7 +45,7 @@ pub fn sample_quotes(quotes: &[Quote], resolution: &TimeUnit) -> Vec<Sample> {
     samples
 }
 
-macro_rules! check {
+macro_rules! _check {
     ($call:expr) => {
         if let Err(e) = $call {
             return Err(e);
@@ -54,8 +54,9 @@ macro_rules! check {
 }
 
 pub trait HistoricalData {
-    fn fetch_last(&mut self, symbol: &str, duration: &TimeWindow) -> Result<(), DiError>;
-    fn get_last(&mut self, symbol: &str, duration: &TimeWindow) -> Result<&[Sample], DiError>;
+    fn append(&mut self, token: &Token, sample: &Sample) -> Result<(), DiError>;
+    fn fetch_last(&mut self, token: &Token, duration: &TimeWindow) -> Result<&[Sample], DiError>;
+    fn get_last(&mut self, token: &Token, duration: &TimeWindow) -> Result<&[Sample], DiError>;
 
     //fn get_previous_samples(
     //    &self,
@@ -120,10 +121,14 @@ pub trait HistoricalData {
 }
 
 impl HistoricalData for BinanceMarket {
-    fn fetch_last(&mut self, symbol: &str, duration: &TimeWindow) -> Result<(), DiError> {
+    fn append(&mut self, token: &Token, sample: &Sample) -> Result<(), DiError> {
+        let v = vec![sample.clone()];
+        self.cache.write(token, &v[..])
+    }
+    fn fetch_last(&mut self, token: &Token, duration: &TimeWindow) -> Result<&[Sample], DiError> {
         let mut samples: Vec<Sample> = Vec::new();
         match self.market.get_klines(
-            symbol,
+            token.to_string().as_str(),
             duration.resolution.name(),
             duration.count as u16,
             None,
@@ -147,23 +152,24 @@ impl HistoricalData for BinanceMarket {
             Err(e) => return Err(DiError::Message(format!("{:?}", e))),
         };
         if !samples.is_empty() {
-            self.cache.write(symbol, &samples[..])?;
+            self.cache.write(token, &samples[..])?;
         }
-        Ok(())
+        self.cache.read(token, duration)
     }
-    fn get_last(&mut self, symbol: &str, duration: &TimeWindow) -> Result<&[Sample], DiError> {
-        self.fetch_last(symbol, duration)?;
-        self.cache.read(symbol, duration)
+    fn get_last(&mut self, token: &Token, duration: &TimeWindow) -> Result<&[Sample], DiError> {
+        self.cache.read(token, duration)
     }
 }
 
 impl HistoricalData for YahooMarket {
-    fn fetch_last(&mut self, _symbol: &str, _duration: &TimeWindow) -> Result<(), DiError> {
+    fn append(&mut self, _token: &Token, _sample: &Sample) -> Result<(), DiError> {
         Err(DiError::NotImplemented)
     }
-    fn get_last(&mut self, symbol: &str, duration: &TimeWindow) -> Result<&[Sample], DiError> {
+    fn fetch_last(&mut self, _token: &Token, _duration: &TimeWindow) -> Result<&[Sample], DiError> {
+        Err(DiError::NotImplemented)
+    }
+    fn get_last(&mut self, _token: &Token, _duration: &TimeWindow) -> Result<&[Sample], DiError> {
         //let period_end = Date::now();
-        check!(self.fetch_last(symbol, &duration));
         Err(DiError::NotImplemented)
     }
     //fn fetch_one(&mut self, symbol: &str, period: &Period) -> Result<(), DiError> {
@@ -178,13 +184,16 @@ impl HistoricalData for YahooMarket {
 }
 
 impl HistoricalData for BrownianMotionMarket {
-    fn fetch_last(&mut self, symbol: &str, duration: &TimeWindow) -> Result<(), DiError> {
+    fn append(&mut self, _token: &Token, _sample: &Sample) -> Result<(), DiError> {
+        Err(DiError::NotImplemented)
+    }
+    fn fetch_last(&mut self, token: &Token, duration: &TimeWindow) -> Result<&[Sample], DiError> {
         let quotes = generate_brownian_data(self.mu, self.sigma, &duration);
         let samples = sample_quotes(&quotes[..], &duration.resolution);
-        self.cache.write(symbol, &samples[..])
+        self.cache.write(token, &samples[..])?;
+        self.cache.read(token, duration)
     }
-    fn get_last(&mut self, symbol: &str, duration: &TimeWindow) -> Result<&[Sample], DiError> {
-        self.fetch_last(symbol, duration)?;
-        self.cache.read(symbol, duration)
+    fn get_last(&mut self, token: &Token, duration: &TimeWindow) -> Result<&[Sample], DiError> {
+        self.cache.read(token, duration)
     }
 }
