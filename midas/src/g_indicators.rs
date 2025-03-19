@@ -1,14 +1,15 @@
-use crate::{g_common::ChartDomain, g_curve::Curve, g_element::GraphElement};
+use crate::g_curve::Curve;
 use dionysus::{
     finance::Sample,
     indicators::{Indicator, IndicatorData, IndicatorDomain, IndicatorSource},
 };
 use random_color::RandomColor;
-use ratatui::{style::Color, widgets::canvas::Context};
+use ratatui::style::Color;
 
 pub enum IndicatorGraph {
     SingleCurve(Curve),
     Curves(Vec<Curve>),
+    Empty(Color),
 }
 
 impl IndicatorGraph {
@@ -16,6 +17,7 @@ impl IndicatorGraph {
         match self {
             IndicatorGraph::SingleCurve(c) => c.color,
             IndicatorGraph::Curves(m) => m[0].color,
+            IndicatorGraph::Empty(c) => c.clone(),
         }
     }
 }
@@ -77,47 +79,12 @@ impl IndicatorsGraph {
         curves
     }
 
-    pub fn add_indicator(&mut self, indicator: &Indicator, samples: &[Sample]) {
+    pub fn add_indicator(&mut self, indicator: &Indicator) {
         let mut rng_color = RandomColor::new();
         let rgb = rng_color.to_rgb_array();
         let color = Color::Rgb(rgb[0], rgb[1], rgb[2]);
-        let mut y0 = 0.0;
-        if indicator.source() == IndicatorSource::Candle {
-            match indicator.domain() {
-                IndicatorDomain::Price => y0 = 0.0,
-                _ => y0 = samples.last().unwrap().open,
-            }
-        }
-        match indicator.compute_series(samples) {
-            Ok(r) => match r {
-                IndicatorData::Scalar(s) => {
-                    let curve = self.curve_from_scalar(samples.len() as f64, s, y0);
-                    self.indicators
-                        .push((indicator.clone(), IndicatorGraph::SingleCurve(curve)));
-                }
-                IndicatorData::Vector(v) => {
-                    let curve = self.curve_from_vector(
-                        samples.len().saturating_sub(v.len()),
-                        &v,
-                        &color,
-                        y0,
-                    );
-                    self.indicators
-                        .push((indicator.clone(), IndicatorGraph::SingleCurve(curve)));
-                }
-                IndicatorData::Matrix(m) => {
-                    let curves = self.curves_from_matrix(
-                        samples.len().saturating_sub(m[0].len()),
-                        &m,
-                        &color,
-                        y0,
-                    );
-                    self.indicators
-                        .push((indicator.clone(), IndicatorGraph::Curves(curves)));
-                }
-            },
-            _ => (),
-        };
+        self.indicators
+            .push((indicator.clone(), IndicatorGraph::Empty(color)));
     }
 
     pub fn compute(&mut self, samples: &[Sample]) {
@@ -157,14 +124,6 @@ impl IndicatorsGraph {
                 },
                 _ => (),
             };
-        }
-    }
-
-    pub fn draw_volume(&self, domain: &ChartDomain, ctx: &mut Context) {
-        for (i, ig) in &self.indicators {
-            if i.source() == IndicatorSource::Volume {
-                ig.draw(domain, ctx);
-            }
         }
     }
 }

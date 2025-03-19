@@ -1,18 +1,25 @@
-use ratatui::widgets::Borders;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Layout, Rect},
     style::Styled,
     symbols::{self},
     text::Line,
-    widgets::{canvas::Canvas, Block, Paragraph, Widget},
+    widgets::{canvas::Canvas, Block, Borders, Paragraph, Widget},
 };
 
 use crate::{
-    common, g_common::ChartDomain, g_element::GraphElement, g_indicators::IndicatorsGraph,
-    g_samples::SamplesGraph,
+    common, g_common::ChartDomain, g_element::GraphElement, g_samples::SamplesGraph,
+    g_strategy::StrategyGraph,
 };
-use dionysus::{finance::Sample, indicators::Indicator, time::TimeWindow};
+use dionysus::{
+    finance::Sample,
+    indicators::{Indicator, IndicatorSource},
+    oracles::Oracle,
+    time::TimeWindow,
+    INFO,
+};
+
+use slog::slog_info;
 
 pub struct StockGraph {
     pub candle_w: ChartDomain,
@@ -20,8 +27,8 @@ pub struct StockGraph {
     pub zooming: bool,
     pub focus: bool,
     pub samples: SamplesGraph,
-    pub indicators: Vec<(String, IndicatorsGraph)>,
-    pub selected_indicator_set: usize,
+    pub strategies: Vec<(String, StrategyGraph)>,
+    pub selected_strategy: usize,
     pub time_window: TimeWindow,
 }
 
@@ -33,8 +40,8 @@ impl Default for StockGraph {
             zooming: false,
             focus: false,
             samples: SamplesGraph::default(),
-            indicators: vec![(String::from("CHART"), IndicatorsGraph::default())],
-            selected_indicator_set: 0,
+            strategies: vec![(String::from("CHART"), StrategyGraph::default())],
+            selected_strategy: 0,
             time_window: TimeWindow::default(),
         }
     }
@@ -45,27 +52,21 @@ impl StockGraph {
         self.samples.update(samples);
         self.time_window.resolution = samples[0].resolution.clone();
         self.time_window.count = samples.len() as i64;
-        self.indicators[self.selected_indicator_set]
-            .1
-            .compute(samples);
+        self.strategies[self.selected_strategy].1.compute(samples);
+    }
+
+    pub fn add_indicator(&mut self, indicator: &Indicator) {
+        self.strategies[0].1.indicators.add_indicator(indicator);
+    }
+
+    pub fn add_oracle(&mut self, oracle: &Oracle) {
+        let mut sg = StrategyGraph::default();
+        sg.set_oracle(oracle);
+        self.strategies.push((oracle.name(), sg));
     }
 
     pub fn reset_camera(&mut self) {
         self.update_bounds();
-    }
-
-    pub fn add_indicator(&mut self, indicator: &Indicator) {
-        self.indicators[0]
-            .1
-            .add_indicator(indicator, &self.samples.data[..]);
-    }
-
-    pub fn add_indicators(&mut self, name: &str, indicators: Vec<Indicator>) {
-        let mut ig = IndicatorsGraph::default();
-        for i in indicators {
-            ig.add_indicator(&i, &self.samples.data[..]);
-        }
-        self.indicators.push((String::from(name), ig));
     }
 
     fn update_bounds(&mut self) {
@@ -108,8 +109,9 @@ impl StockGraph {
 
     pub fn draw_legend(&self, area: Rect, buf: &mut Buffer) {
         let mut lines: Vec<Line> = Vec::new();
-        for (_, (indicator, ig)) in self.indicators[self.selected_indicator_set]
+        for (_, (indicator, ig)) in self.strategies[self.selected_strategy]
             .1
+            .indicators
             .indicators
             .iter()
             .enumerate()
@@ -120,7 +122,7 @@ impl StockGraph {
         Paragraph::new(lines)
             .block(Block::bordered().title(format!(
                 "Indicators ({:?})",
-                self.indicators[self.selected_indicator_set].0
+                self.strategies[self.selected_strategy].0
             )))
             .render(area, buf);
     }
@@ -144,10 +146,13 @@ impl Widget for &StockGraph {
             .x_bounds(self.candle_w.bounds[0])
             .y_bounds(self.candle_w.bounds[1])
             .paint(|ctx| {
-                self.samples.draw(&self.candle_w, ctx);
-                self.indicators[self.selected_indicator_set]
-                    .1
-                    .draw(&self.candle_w, ctx);
+                self.samples
+                    .draw(&self.candle_w, &IndicatorSource::Candle, ctx);
+                self.strategies[self.selected_strategy].1.draw(
+                    &self.candle_w,
+                    &IndicatorSource::Candle,
+                    ctx,
+                );
                 self.candle_w.draw(ctx);
             })
             .render(candle_area, buf);
@@ -162,9 +167,11 @@ impl Widget for &StockGraph {
             .y_bounds(self.volume_w.bounds[1])
             .paint(|ctx| {
                 self.samples.draw_volume(&self.volume_w, ctx);
-                self.indicators[self.selected_indicator_set]
-                    .1
-                    .draw_volume(&self.volume_w, ctx);
+                self.strategies[self.selected_strategy].1.draw(
+                    &self.volume_w,
+                    &IndicatorSource::Volume,
+                    ctx,
+                );
                 self.volume_w.draw(ctx);
             })
             .render(volume_area, buf);

@@ -2,11 +2,12 @@ use slog::{slog_error, slog_info};
 use slog_scope;
 
 use crate::{
-    finance::{DiError, Quote, Sample},
+    finance::{DiError, Quote, Sample, Token},
     indicators::{BollingerBandsAttributes, Indicator, IndicatorData},
+    time::Date,
     ERROR, INFO,
 };
-use std::cmp::Ordering;
+use std::{cmp::Ordering, default};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Crossover {
@@ -100,7 +101,7 @@ pub enum Signal {
     None,
 }
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Advice {
     pub signal: Signal,
     pub stop_price: f64,
@@ -108,8 +109,9 @@ pub struct Advice {
     pub take_profit: f64,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Default, Debug)]
 pub enum Oracle {
+    #[default]
     Trace,
     MeanReversion(usize),
     MACDCrossover((usize, usize, usize)),
@@ -183,6 +185,37 @@ impl Oracle {
             Self::EMACross((fp, sp)) => run_ema_cross(*fp, *sp, quote, history),
         }
     }
+    pub fn run_series(&self, samples: &[Sample]) -> Result<Vec<Advice>, DiError> {
+        let n = self.required_samples();
+        let mut advices: Vec<Advice> = vec![Advice::default(); samples.len() * 2];
+        for i in n..samples.len() {
+            advices[i * 2 + 0] = self
+                .run(
+                    &Quote {
+                        token: Token::default(),
+                        bid: samples[i].open,
+                        ask: samples[i].open,
+                        biddate: Date::from_timestamp(samples[i].timestamp),
+                        askdate: Date::from_timestamp(samples[i].timestamp),
+                    },
+                    &samples[..i],
+                )
+                .unwrap();
+            advices[i * 2 + 1] = self
+                .run(
+                    &Quote {
+                        token: Token::default(),
+                        bid: samples[i].close,
+                        ask: samples[i].close,
+                        biddate: Date::from_timestamp(samples[i].timestamp),
+                        askdate: Date::from_timestamp(samples[i].timestamp),
+                    },
+                    &samples[..i],
+                )
+                .unwrap();
+        }
+        Ok(advices)
+    }
     pub fn indicators(&self) -> Vec<Indicator> {
         match self {
             Oracle::MeanReversion(n) => {
@@ -228,8 +261,9 @@ impl Oracle {
 }
 
 fn run_trace(quote: &Quote) -> Result<Advice, DiError> {
-    println!("{:?}", quote);
-    Ok(Advice::default())
+    let mut advice = Advice::default();
+    advice.stop_price = quote.ask;
+    Ok(advice)
 }
 
 fn run_mean_reversion(n: usize, quote: &Quote, history: &[Sample]) -> Result<Advice, DiError> {
@@ -251,8 +285,12 @@ fn run_mean_reversion(n: usize, quote: &Quote, history: &[Sample]) -> Result<Adv
 
     let mut advice = Advice::default();
     if buy {
+        advice.stop_price = lower;
+        advice.stop_loss = lower;
         advice.signal = Signal::Buy;
     } else if sell {
+        advice.stop_price = upper;
+        advice.stop_loss = upper;
         advice.signal = Signal::Sell;
     }
 

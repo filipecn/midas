@@ -149,14 +149,15 @@ pub fn macd_s(
     signal_period: usize,
     samples: &[Sample],
 ) -> Result<IndicatorData, DiError> {
-    let mut r: Vec<Vec<f64>> = Vec::new();
-    let mut bb =
+    let mut r: Vec<Vec<f64>> = vec![Vec::new(), Vec::new()];
+    let mut macd =
         MovingAverageConvergenceDivergence::new(fast_period, slow_period, signal_period).unwrap();
     for sample in samples {
-        let cur = bb.next(sample);
+        let cur = macd.next(sample);
         // (macd, signal, histogram)
-        let ro = round(cur.into());
-        r.push(vec![ro.0, ro.1, ro.2]);
+        let ro = (cur.macd, cur.signal); //round(cur.into());
+        r[0].push(ro.0);
+        r[1].push(ro.1);
     }
     Ok(IndicatorData::Matrix(r))
 }
@@ -173,7 +174,10 @@ pub fn macd(
         signal_period,
         &samples[samples.len() - slow_period..],
     ) {
-        Ok(IndicatorData::Matrix(r)) => Ok(IndicatorData::Vector(r.last().unwrap().clone())),
+        Ok(IndicatorData::Matrix(r)) => Ok(IndicatorData::Matrix(vec![
+            vec![r[0].last().unwrap().clone()],
+            vec![r[1].last().unwrap().clone()],
+        ])),
         Ok(_) => Err(DiError::Error),
         Err(e) => Err(e),
     }

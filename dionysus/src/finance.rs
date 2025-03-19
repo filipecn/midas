@@ -9,6 +9,7 @@ pub enum DiError {
     NotImplemented,
     Message(String),
     Error,
+    OutOfBounds,
     None,
 }
 

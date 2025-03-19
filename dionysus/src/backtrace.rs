@@ -23,10 +23,10 @@ pub fn backtrace(symbol: &str, period: &Period, strategy: &mut Strategy) -> Resu
 }
 
 fn run_backtrace(
-    symbol: &str,
-    period: &Period,
-    strategy: &mut Strategy,
-    history: &impl HistoricalData,
+    _symbol: &str,
+    _period: &Period,
+    _strategy: &mut Strategy,
+    _history: &impl HistoricalData,
 ) -> Result<(), DiError> {
     //let period_data;
     //match history.get_period(symbol, &period) {

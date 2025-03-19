@@ -22,6 +22,7 @@ mod g_curve;
 mod g_element;
 mod g_indicators;
 mod g_samples;
+mod g_strategy;
 mod w_command;
 mod w_graph;
 mod w_interactible;
@@ -68,7 +69,7 @@ impl App {
     fn add_tab(&mut self, symbol: &str, currency: &str) {
         let time_window = TimeWindow {
             resolution: TimeUnit::Hour(1),
-            count: 100,
+            count: 200,
         };
         let pair = Token::pair(
             String::from(symbol).to_uppercase().as_str(),
@@ -94,7 +95,7 @@ impl App {
         if let Some((curr_index, curr_token)) = self.symbol_tabs.current() {
             let time_window = TimeWindow {
                 resolution: TimeUnit::from_name(resolution_name),
-                count: 100,
+                count: 200,
             };
 
             match self.market.fetch_last(&curr_token, &time_window) {
@@ -126,7 +127,7 @@ impl App {
 
     /// runs the application's main loop until the user quits
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
-        self.add_tab("BTC", "usdt");
+        self.add_tab("kaito", "usdt");
         self.run_command("oracle mean-reversion 10");
         self.run_command("oracle macd-crossover 12 26 9");
         self.run_command("oracle macd-zero-cross 12 26 9");
@@ -315,7 +316,7 @@ impl App {
                     s.add_oracle(&oracle);
                 }
                 for w in &mut self.stock_views {
-                    w.add_indicators(oracle.name().as_str(), oracle.indicators());
+                    w.add_oracle(&oracle);
                 }
             }
             None => (),

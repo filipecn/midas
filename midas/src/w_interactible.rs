@@ -16,8 +16,7 @@ impl Interactible for StockGraph {
             };
             match key_event.code {
                 KeyCode::Char('i') => {
-                    self.selected_indicator_set =
-                        (self.selected_indicator_set + 1) % self.indicators.len();
+                    self.selected_strategy = (self.selected_strategy + 1) % self.strategies.len();
                 }
                 KeyCode::Left => {
                     if self.zooming {

@@ -2,7 +2,7 @@ use ratatui::text::Line;
 
 use crate::common;
 use crate::common::ListWindow;
-use dionysus::finance::{Quote, Sample};
+use dionysus::finance::{DiError, Quote, Sample};
 use dionysus::oracles::{Advice, Oracle, Signal};
 use dionysus::ERROR;
 use slog::slog_error;

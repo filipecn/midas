@@ -10,12 +10,22 @@ use ratatui::{
     },
 };
 
+use dionysus::oracles::Signal;
+
 pub const NORMAL_FG: Color = BLUE.c50;
 pub const NORMAL_BG: Color = SLATE.c950;
 pub const _NORMAL_HEADER_STYLE: Style = Style::new().fg(SLATE.c100).bg(BLUE.c800);
 pub const SELECTED_STYLE: Style = Style::new().bg(SLATE.c800).add_modifier(Modifier::BOLD);
 pub const PROFIT_COLOR: Color = GREEN.c500;
 pub const LOSS_COLOR: Color = RED.c500;
+
+pub fn color_from_signal(signal: &Signal) -> Color {
+    match signal {
+        Signal::Buy => RED.c200,
+        Signal::Sell => GREEN.c200,
+        Signal::None => BLUE.c50,
+    }
+}
 
 pub fn block(title: &str) -> Block {
     Block::new()

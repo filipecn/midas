@@ -10,14 +10,14 @@ type Wallet = HashMap<String, f64>;
 pub struct Strategy {
     pub oracles: Vec<Oracle>,
 
-    time_resolution: TimeUnit,
+    _time_resolution: TimeUnit,
     _wallet: Wallet,
 }
 
 impl Strategy {
     pub fn new() -> Self {
         Self {
-            time_resolution: TimeUnit::Day(1),
+            _time_resolution: TimeUnit::Day(1),
             oracles: Vec::new(),
             _wallet: Wallet::new(),
         }
