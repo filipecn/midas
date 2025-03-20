@@ -1,7 +1,7 @@
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode};
 use dionysus::binance::{BinanceMarket, MarketEvent};
-use dionysus::finance::{Quote, Token};
+use dionysus::finance::{DiError, Quote, Sample, Token};
 use dionysus::historical_data::HistoricalData;
 use dionysus::indicators::match_indicator_from_text;
 use dionysus::oracles::match_oracle_from_text;
@@ -91,12 +91,21 @@ impl App {
         };
     }
 
+    fn set_history_size(&mut self, n: usize) {
+        if let Some((i, pair)) = self.symbol_tabs.current() {
+            let mut time_window = self.stock_views[i].time_window.clone();
+            time_window.count = n as i64;
+            match self.market.fetch_last(&pair, &time_window) {
+                Ok(samples) => self.stock_views[i].set_data(samples),
+                Err(e) => ERROR!("{:?}", e),
+            }
+        }
+    }
+
     fn set_resolution(&mut self, resolution_name: &str) {
         if let Some((curr_index, curr_token)) = self.symbol_tabs.current() {
-            let time_window = TimeWindow {
-                resolution: TimeUnit::from_name(resolution_name),
-                count: 200,
-            };
+            let mut time_window = self.stock_views[curr_index].time_window.clone();
+            time_window.resolution = TimeUnit::from_name(resolution_name);
 
             match self.market.fetch_last(&curr_token, &time_window) {
                 Ok(samples) => {
@@ -116,8 +125,6 @@ impl App {
                 match self.market.get_last(token, &time_window) {
                     Ok(samples) => {
                         self.stock_views[i].set_data(samples);
-                        let quote = Quote::from_sample(token, samples.last().unwrap());
-                        self.strategy_w[i].run(&quote, &samples[..samples.len() - 1]);
                     }
                     Err(e) => ERROR!("{:?}", e),
                 };
@@ -157,8 +164,12 @@ impl App {
                         }
                         MarketEvent::Ticks(ticks) => self.market_w.update_with(ticks),
                         MarketEvent::OrderBook(book) => {
-                            if let Some((_, current_token)) = self.symbol_tabs.current() {
+                            if let Some((curr_index, current_token)) = self.symbol_tabs.current() {
                                 if current_token == book.token {
+                                    self.strategy_w[curr_index].run(
+                                        &book.quote(),
+                                        self.stock_views[curr_index].samples.data.as_slice(),
+                                    );
                                     self.order_book_w.update_with(book);
                                 }
                             }
@@ -296,6 +307,11 @@ impl App {
             "GRAPH" => self.add_indicator(&words[1..]),
             "RES" => self.set_resolution(&words[1]),
             "ORACLE" => self.add_oracle(&words[1..]),
+            "HIST" => {
+                if let Ok(n) = words[1].parse::<usize>() {
+                    self.set_history_size(n);
+                }
+            }
             _ => (),
         };
     }

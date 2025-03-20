@@ -10,7 +10,7 @@ use common::ListWindow;
 use dionysus::binance::{Book, BookLine};
 
 pub struct OrderBookWindow {
-    book: Book,
+    pub book: Book,
     bids_window: ListWindow<BookLine>,
     asks_window: ListWindow<BookLine>,
 }

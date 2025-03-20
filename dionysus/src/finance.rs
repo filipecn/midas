@@ -127,6 +127,18 @@ impl Sample {
     pub fn date(&self) -> Date {
         Date::from_timestamp(self.timestamp)
     }
+
+    pub fn from_quote(quote: &Quote) -> Sample {
+        Sample {
+            resolution: TimeUnit::default(),
+            timestamp: quote.biddate.timestamp() as u64,
+            open: quote.ask,
+            high: quote.ask,
+            low: quote.ask,
+            close: quote.ask,
+            volume: 1,
+        }
+    }
 }
 
 impl Quote {

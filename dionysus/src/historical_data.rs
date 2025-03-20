@@ -56,7 +56,7 @@ macro_rules! _check {
 pub trait HistoricalData {
     fn append(&mut self, token: &Token, sample: &Sample) -> Result<(), DiError>;
     fn fetch_last(&mut self, token: &Token, duration: &TimeWindow) -> Result<&[Sample], DiError>;
-    fn get_last(&mut self, token: &Token, duration: &TimeWindow) -> Result<&[Sample], DiError>;
+    fn get_last(&self, token: &Token, duration: &TimeWindow) -> Result<&[Sample], DiError>;
 
     //fn get_previous_samples(
     //    &self,
@@ -156,7 +156,7 @@ impl HistoricalData for BinanceMarket {
         }
         self.cache.read(token, duration)
     }
-    fn get_last(&mut self, token: &Token, duration: &TimeWindow) -> Result<&[Sample], DiError> {
+    fn get_last(&self, token: &Token, duration: &TimeWindow) -> Result<&[Sample], DiError> {
         self.cache.read(token, duration)
     }
 }
@@ -168,7 +168,7 @@ impl HistoricalData for YahooMarket {
     fn fetch_last(&mut self, _token: &Token, _duration: &TimeWindow) -> Result<&[Sample], DiError> {
         Err(DiError::NotImplemented)
     }
-    fn get_last(&mut self, _token: &Token, _duration: &TimeWindow) -> Result<&[Sample], DiError> {
+    fn get_last(&self, _token: &Token, _duration: &TimeWindow) -> Result<&[Sample], DiError> {
         //let period_end = Date::now();
         Err(DiError::NotImplemented)
     }
@@ -193,7 +193,7 @@ impl HistoricalData for BrownianMotionMarket {
         self.cache.write(token, &samples[..])?;
         self.cache.read(token, duration)
     }
-    fn get_last(&mut self, token: &Token, duration: &TimeWindow) -> Result<&[Sample], DiError> {
+    fn get_last(&self, token: &Token, duration: &TimeWindow) -> Result<&[Sample], DiError> {
         self.cache.read(token, duration)
     }
 }

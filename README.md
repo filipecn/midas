@@ -1,6 +1,7 @@
 # midas
 
-[ ] visual backtest (mark graph with B/S points)
+[ ] use quote
+[ ] vis quote
 
 ---
 
@@ -9,3 +10,5 @@
 [ ] graph zoom on load 
 
 [x] volume graph
+
+[x] visual backtest (mark graph with B/S points)

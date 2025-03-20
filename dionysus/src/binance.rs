@@ -1,6 +1,6 @@
 use crate::cache::Cache;
-use crate::finance::{DiError, Sample, Token};
-use crate::time::TimeUnit;
+use crate::finance::{DiError, Quote, Sample, Token};
+use crate::time::{Date, TimeUnit};
 use crate::{ERROR, INFO};
 use binance;
 use binance::websockets::*;
@@ -32,6 +32,34 @@ pub struct Book {
     pub token: Token,
     pub bids: Vec<BookLine>,
     pub asks: Vec<BookLine>,
+}
+
+impl Book {
+    pub fn quote(&self) -> Quote {
+        Quote {
+            bid: if let Some(l) = self
+                .bids
+                .iter()
+                .max_by(|a, b| a.price.partial_cmp(&b.price).unwrap())
+            {
+                l.price
+            } else {
+                0.0
+            },
+            ask: if let Some(l) = self
+                .bids
+                .iter()
+                .min_by(|a, b| a.price.partial_cmp(&b.price).unwrap())
+            {
+                l.price
+            } else {
+                0.0
+            },
+            token: self.token.clone(),
+            biddate: Date::now(),
+            askdate: Date::now(),
+        }
+    }
 }
 
 pub struct MarketTick {

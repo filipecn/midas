@@ -129,7 +129,7 @@ impl GraphElement for StrategyGraph {
                     //    color: color_from_signal(&advice.signal),
                     //});
                     ctx.print(
-                        (i / 2) as f64 * domain.dx,
+                        i as f64 * domain.dx,
                         advice.stop_price,
                         format!("{:?}", advice.signal).set_style(color_from_signal(&advice.signal)),
                     );

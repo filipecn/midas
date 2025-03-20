@@ -187,21 +187,9 @@ impl Oracle {
     }
     pub fn run_series(&self, samples: &[Sample]) -> Result<Vec<Advice>, DiError> {
         let n = self.required_samples();
-        let mut advices: Vec<Advice> = vec![Advice::default(); samples.len() * 2];
+        let mut advices: Vec<Advice> = vec![Advice::default(); samples.len()];
         for i in n..samples.len() {
-            advices[i * 2 + 0] = self
-                .run(
-                    &Quote {
-                        token: Token::default(),
-                        bid: samples[i].open,
-                        ask: samples[i].open,
-                        biddate: Date::from_timestamp(samples[i].timestamp),
-                        askdate: Date::from_timestamp(samples[i].timestamp),
-                    },
-                    &samples[..i],
-                )
-                .unwrap();
-            advices[i * 2 + 1] = self
+            advices[i] = self
                 .run(
                     &Quote {
                         token: Token::default(),
@@ -210,7 +198,7 @@ impl Oracle {
                         biddate: Date::from_timestamp(samples[i].timestamp),
                         askdate: Date::from_timestamp(samples[i].timestamp),
                     },
-                    &samples[..i],
+                    &samples[..i + 1],
                 )
                 .unwrap();
         }

@@ -63,12 +63,19 @@ impl Cache {
             Some(unit_cache) => match unit_cache.get_mut(&resolution) {
                 Some(cache) => {
                     for sample in v {
-                        let last_index = cache.len() - 1;
-                        if sample.timestamp < cache[last_index].timestamp {
-                            return Err(DiError::NotImplemented);
-                        } else if sample.timestamp == cache[last_index].timestamp {
-                            cache[last_index] = sample;
-                        } else {
+                        let mut found = false;
+                        for i in 0..cache.len() {
+                            if sample.timestamp < cache[i].timestamp {
+                                cache.insert(i, sample.clone());
+                                found = true;
+                                break;
+                            } else if sample.timestamp == cache[i].timestamp {
+                                cache[i] = sample.clone();
+                                found = true;
+                                break;
+                            }
+                        }
+                        if !found {
                             cache.push(sample);
                         }
                     }
