@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 
 use crate::common::{self};
 use common::ListWindow;
-use dionysus::binance::{Book, BookLine};
+use dionysus::finance::{Book, BookLine};
 
 pub struct OrderBookWindow {
     pub book: Book,

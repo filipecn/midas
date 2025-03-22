@@ -1,13 +1,13 @@
-use slog::{slog_error, slog_info};
+use slog::slog_info;
 use slog_scope;
 
 use crate::{
     finance::{DiError, Quote, Sample, Token},
     indicators::{BollingerBandsAttributes, Indicator, IndicatorData},
     time::Date,
-    ERROR, INFO,
+    INFO,
 };
-use std::{cmp::Ordering, default};
+use std::cmp::Ordering;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Crossover {

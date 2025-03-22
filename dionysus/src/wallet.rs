@@ -6,10 +6,11 @@ use std::fs::read_to_string;
 
 #[derive(Debug, Default)]
 pub struct Asset {
-    symbol: Token,
-    free: f64,
+    pub symbol: Token,
+    pub free: f64,
 }
 
+#[derive(Default)]
 pub struct Wallet {
     capital: HashMap<Token, f64>,
     positions: HashMap<Token, Position>,
@@ -26,13 +27,13 @@ pub struct BinanceWallet {
 
 impl Default for BinanceWallet {
     fn default() -> Self {
-        BinanceWallet::new()
+        BinanceWallet::new("/home/filipecn/dev/midas/keys")
     }
 }
 
 impl BinanceWallet {
-    pub fn new() -> Self {
-        let keys: Vec<String> = read_to_string("/home/filipecn/dev/midas/keys")
+    pub fn new(keys_file: &str) -> Self {
+        let keys: Vec<String> = read_to_string(&keys_file)
             .unwrap() // panic on possible file-reading errors
             .lines() // split the string into an iterator of string slices
             .map(String::from) // make each slice into a string

@@ -1,7 +1,7 @@
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode};
-use dionysus::binance::{BinanceMarket, MarketEvent};
-use dionysus::finance::{DiError, Quote, Sample, Token};
+use dionysus::binance::BinanceMarket;
+use dionysus::finance::{DiError, MarketEvent, Quote, Sample, Token};
 use dionysus::historical_data::HistoricalData;
 use dionysus::indicators::match_indicator_from_text;
 use dionysus::oracles::match_oracle_from_text;
@@ -17,12 +17,14 @@ use slog_scope;
 use std::io;
 
 mod common;
+mod g_book;
 mod g_common;
 mod g_curve;
 mod g_element;
 mod g_indicators;
 mod g_samples;
 mod g_strategy;
+mod midas;
 mod w_command;
 mod w_graph;
 mod w_interactible;
@@ -33,6 +35,7 @@ mod w_strategy;
 mod w_symbol_tabs;
 mod w_wallet;
 
+use midas::Midas;
 use w_command::CommandInput;
 use w_graph::StockGraph;
 use w_interactible::Interactible;
@@ -42,6 +45,8 @@ use w_order_book::OrderBookWindow;
 use w_strategy::StrategyWindow;
 use w_symbol_tabs::SymbolTabs;
 use w_wallet::WalletWindow;
+
+//static midas: Midas = Midas::new("/home/filipecn/dev/midas/keys");
 
 #[derive(Default, Eq, PartialEq)]
 enum InputMode {
@@ -166,10 +171,13 @@ impl App {
                         MarketEvent::OrderBook(book) => {
                             if let Some((curr_index, current_token)) = self.symbol_tabs.current() {
                                 if current_token == book.token {
-                                    self.strategy_w[curr_index].run(
-                                        &book.quote(),
-                                        self.stock_views[curr_index].samples.data.as_slice(),
-                                    );
+                                    self.stock_views[curr_index].book_w.set_book(&book);
+                                    if let Some(quote) = book.quote() {
+                                        self.strategy_w[curr_index].run(
+                                            &quote,
+                                            self.stock_views[curr_index].samples.data.as_slice(),
+                                        );
+                                    }
                                     self.order_book_w.update_with(book);
                                 }
                             }

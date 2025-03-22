@@ -1,10 +1,10 @@
 use crate::cache::Cache;
-use crate::finance::{DiError, Quote, Sample, Token};
-use crate::time::{Date, TimeUnit};
+use crate::finance::{Book, BookLine, DiError, MarketEvent, MarketTick, Sample, Token};
+use crate::time::TimeUnit;
 use crate::{ERROR, INFO};
 use binance;
 use binance::websockets::*;
-use slog::{self, o, slog_error, slog_info, Drain};
+use slog::{self, slog_error, slog_info};
 use std::collections::HashMap;
 use std::fs::read_to_string;
 use std::sync::{
@@ -19,59 +19,6 @@ const MAX_CONCURRENT_THREADS: usize = 40;
 pub struct BinanceStream {
     pub stream: binance::userstream::UserStream,
     keep_running: AtomicBool,
-}
-
-#[derive(Clone)]
-pub struct BookLine {
-    pub price: f64,
-    pub quantity: f64,
-}
-
-#[derive(Default)]
-pub struct Book {
-    pub token: Token,
-    pub bids: Vec<BookLine>,
-    pub asks: Vec<BookLine>,
-}
-
-impl Book {
-    pub fn quote(&self) -> Quote {
-        Quote {
-            bid: if let Some(l) = self
-                .bids
-                .iter()
-                .max_by(|a, b| a.price.partial_cmp(&b.price).unwrap())
-            {
-                l.price
-            } else {
-                0.0
-            },
-            ask: if let Some(l) = self
-                .bids
-                .iter()
-                .min_by(|a, b| a.price.partial_cmp(&b.price).unwrap())
-            {
-                l.price
-            } else {
-                0.0
-            },
-            token: self.token.clone(),
-            biddate: Date::now(),
-            askdate: Date::now(),
-        }
-    }
-}
-
-pub struct MarketTick {
-    pub token: Token,
-    pub price: f64,
-    pub change_pct: f64,
-}
-
-pub enum MarketEvent {
-    KLine((Token, Sample)),
-    Ticks(Vec<MarketTick>),
-    OrderBook(Book),
 }
 
 pub struct BinanceMarket {

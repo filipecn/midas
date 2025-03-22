@@ -2,16 +2,17 @@ use std::f64;
 
 use crate::{
     common::{color_from_signal, LOSS_COLOR, PROFIT_COLOR},
+    g_book::BookGraph,
     g_common::ChartDomain,
     g_curve::Curve,
     g_indicators::{IndicatorGraph, IndicatorsGraph},
     g_samples::SamplesGraph,
     g_strategy::StrategyGraph,
 };
-use dionysus::{indicators::IndicatorSource, oracles::Signal};
+use dionysus::{indicators::IndicatorSource, oracles::Signal, INFO};
 use ratatui::{
     style::Styled,
-    widgets::canvas::{Circle, Context, Line, Rectangle},
+    widgets::canvas::{Context, Line, Rectangle},
 };
 
 pub trait GraphElement {
@@ -118,16 +119,8 @@ impl GraphElement for StrategyGraph {
     fn draw(&self, domain: &ChartDomain, dest: &IndicatorSource, ctx: &mut Context) {
         self.indicators.draw(domain, dest, ctx);
         if *dest == IndicatorSource::Candle {
-            //let mut line_points: Vec<(f64, f64)> = Vec::new();
             for (i, advice) in self.advices.iter().enumerate() {
                 if advice.signal != Signal::None {
-                    //line_points.push(((i / 2) as f64 * domain.dx, advice.stop_price));
-                    //ctx.draw(&Circle {
-                    //    x: (i / 2) as f64 * domain.dx,
-                    //    y: advice.stop_price,
-                    //    radius: 0.1,
-                    //    color: color_from_signal(&advice.signal),
-                    //});
                     ctx.print(
                         i as f64 * domain.dx,
                         advice.stop_price,
@@ -135,15 +128,29 @@ impl GraphElement for StrategyGraph {
                     );
                 }
             }
-            //for i in 1..line_points.len() {
-            //    ctx.draw(&Line {
-            //        x1: line_points[i - 1].0,
-            //        x2: line_points[i].0,
-            //        y1: line_points[i - 1].1,
-            //        y2: line_points[i].1,
-            //        color: color_from_signal(&Signal::None),
-            //    });
-            //}
+        }
+    }
+}
+
+impl GraphElement for BookGraph {
+    fn draw(&self, domain: &ChartDomain, _: &IndicatorSource, ctx: &mut Context) {
+        for l in &self.book.asks {
+            ctx.draw(&Line {
+                x1: self.x_pos * domain.dx - domain.dx * 0.3,
+                x2: self.x_pos * domain.dx,
+                y1: l.price,
+                y2: l.price,
+                color: color_from_signal(&Signal::Buy),
+            });
+        }
+        for l in &self.book.bids {
+            ctx.draw(&Line {
+                x1: self.x_pos * domain.dx - domain.dx * 0.3,
+                x2: self.x_pos * domain.dx,
+                y1: l.price,
+                y2: l.price,
+                color: color_from_signal(&Signal::Sell),
+            });
         }
     }
 }

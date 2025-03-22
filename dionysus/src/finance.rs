@@ -127,28 +127,61 @@ impl Sample {
     pub fn date(&self) -> Date {
         Date::from_timestamp(self.timestamp)
     }
+}
 
-    pub fn from_quote(quote: &Quote) -> Sample {
-        Sample {
-            resolution: TimeUnit::default(),
-            timestamp: quote.biddate.timestamp() as u64,
-            open: quote.ask,
-            high: quote.ask,
-            low: quote.ask,
-            close: quote.ask,
-            volume: 1,
+#[derive(Clone)]
+pub struct BookLine {
+    pub price: f64,
+    pub quantity: f64,
+}
+
+#[derive(Default, Clone)]
+pub struct Book {
+    pub token: Token,
+    pub bids: Vec<BookLine>,
+    pub asks: Vec<BookLine>,
+}
+
+impl Book {
+    pub fn quote(&self) -> Option<Quote> {
+        if self.bids.is_empty() || self.asks.is_empty() {
+            None
+        } else {
+            Some(Quote {
+                bid: if let Some(l) = self
+                    .bids
+                    .iter()
+                    .max_by(|a, b| a.price.partial_cmp(&b.price).unwrap())
+                {
+                    l.price
+                } else {
+                    0.0
+                },
+                ask: if let Some(l) = self
+                    .bids
+                    .iter()
+                    .min_by(|a, b| a.price.partial_cmp(&b.price).unwrap())
+                {
+                    l.price
+                } else {
+                    0.0
+                },
+                token: self.token.clone(),
+                biddate: Date::now(),
+                askdate: Date::now(),
+            })
         }
     }
 }
 
-impl Quote {
-    pub fn from_sample(token: &Token, sample: &Sample) -> Quote {
-        Quote {
-            token: token.clone(),
-            bid: sample.close,
-            ask: sample.close,
-            biddate: Date::from_timestamp(sample.timestamp),
-            askdate: Date::from_timestamp(sample.timestamp),
-        }
-    }
+pub struct MarketTick {
+    pub token: Token,
+    pub price: f64,
+    pub change_pct: f64,
+}
+
+pub enum MarketEvent {
+    KLine((Token, Sample)),
+    Ticks(Vec<MarketTick>),
+    OrderBook(Book),
 }

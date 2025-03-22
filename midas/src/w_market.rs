@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 
 use crate::common;
 use crate::common::ListWindow;
-use dionysus::binance::MarketTick;
+use dionysus::finance::MarketTick;
 
 #[derive(Default)]
 pub struct MarketWindow {

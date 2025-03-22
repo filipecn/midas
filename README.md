@@ -1,7 +1,10 @@
 # midas
 
-[ ] use quote
-[ ] vis quote
+[ ] integrate midas into app
+
+[ ] create order
+
+[ ] backtest
 
 ---
 
@@ -12,3 +15,8 @@
 [x] volume graph
 
 [x] visual backtest (mark graph with B/S points)
+
+[x] use quote
+
+[x] vis quote
+

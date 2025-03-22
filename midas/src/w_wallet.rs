@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use crate::common;
-use dionysus::{wallet::Wallet, ERROR};
+use dionysus::ERROR;
 use ratatui::{
     text::Line,
     widgets::{HighlightSpacing, List, ListItem, ListState, StatefulWidget},

@@ -8,8 +8,8 @@ use ratatui::{
 };
 
 use crate::{
-    common, g_common::ChartDomain, g_element::GraphElement, g_samples::SamplesGraph,
-    g_strategy::StrategyGraph,
+    common, g_book::BookGraph, g_common::ChartDomain, g_element::GraphElement,
+    g_samples::SamplesGraph, g_strategy::StrategyGraph,
 };
 use dionysus::{
     finance::Sample,
@@ -22,6 +22,7 @@ use dionysus::{
 use slog::slog_info;
 
 pub struct StockGraph {
+    pub book_w: BookGraph,
     pub candle_w: ChartDomain,
     pub volume_w: ChartDomain,
     pub zooming: bool,
@@ -35,6 +36,7 @@ pub struct StockGraph {
 impl Default for StockGraph {
     fn default() -> Self {
         Self {
+            book_w: BookGraph::default(),
             candle_w: ChartDomain::default(),
             volume_w: ChartDomain::default(),
             zooming: false,
@@ -53,6 +55,7 @@ impl StockGraph {
         self.time_window.resolution = samples[0].resolution.clone();
         self.time_window.count = samples.len() as i64;
         self.strategies[self.selected_strategy].1.compute(samples);
+        self.book_w.x_pos = samples.len() as f64;
     }
 
     pub fn add_indicator(&mut self, indicator: &Indicator) {
@@ -154,6 +157,8 @@ impl Widget for &StockGraph {
                     ctx,
                 );
                 self.candle_w.draw(ctx);
+                self.book_w
+                    .draw(&self.candle_w, &IndicatorSource::Candle, ctx);
             })
             .render(candle_area, buf);
         Canvas::default()

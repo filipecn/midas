@@ -1,29 +1,31 @@
-use std::collections::HashMap;
+use crate::finance::{DiError, Quote, Sample};
+use crate::oracles::{Advice, Oracle, Signal};
+use crate::time::TimeWindow;
 
-use crate::finance::{DiError, Quote};
-use crate::historical_data::HistoricalData;
-use crate::oracles::{Oracle, Signal};
-use crate::time::TimeUnit;
-
-type Wallet = HashMap<String, f64>;
+#[derive(Default)]
+pub struct Decision {
+    advice: Advice,
+    pct: f64,
+}
 
 pub struct Strategy {
     pub oracles: Vec<Oracle>,
-
-    _time_resolution: TimeUnit,
-    _wallet: Wallet,
+    duration: TimeWindow,
 }
 
 impl Strategy {
     pub fn new() -> Self {
         Self {
-            _time_resolution: TimeUnit::Day(1),
             oracles: Vec::new(),
-            _wallet: Wallet::new(),
+            duration: TimeWindow::default(),
         }
     }
 
-    pub fn run(&self, quote: &Quote, history: &mut impl HistoricalData) -> Result<Signal, DiError> {
+    pub fn time_window(&self) -> TimeWindow {
+        self.duration.clone()
+    }
+
+    pub fn run(&self, quote: &Quote, history: &[Sample]) -> Result<Decision, DiError> {
         let quote_time = quote.biddate.clone();
         let mut buy_signal_count = 0;
         let mut _sell_signal_count = 0;
@@ -47,9 +49,9 @@ impl Strategy {
             //    Err(_s) => continue,
             //}
         }
-        if buy_signal_count > 0 {
-            return Ok(Signal::Buy);
-        }
-        Ok(Signal::None)
+        //if buy_signal_count > 0 {
+        //    return Ok(Signal::Buy);
+        //}
+        Ok(Decision::default())
     }
 }
