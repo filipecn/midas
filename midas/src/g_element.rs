@@ -9,7 +9,7 @@ use crate::{
     g_samples::SamplesGraph,
     g_strategy::StrategyGraph,
 };
-use dionysus::{indicators::IndicatorSource, oracles::Signal, INFO};
+use dionysus::{counselor::Signal, indicators::IndicatorSource};
 use ratatui::{
     style::Styled,
     widgets::canvas::{Context, Line, Rectangle},

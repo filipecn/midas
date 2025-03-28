@@ -14,7 +14,6 @@ use crate::{
 use dionysus::{
     finance::Sample,
     indicators::{Indicator, IndicatorSource},
-    oracles::Oracle,
     time::TimeWindow,
     INFO,
 };
@@ -60,12 +59,6 @@ impl StockGraph {
 
     pub fn add_indicator(&mut self, indicator: &Indicator) {
         self.strategies[0].1.indicators.add_indicator(indicator);
-    }
-
-    pub fn add_oracle(&mut self, oracle: &Oracle) {
-        let mut sg = StrategyGraph::default();
-        sg.set_oracle(oracle);
-        self.strategies.push((oracle.name(), sg));
     }
 
     pub fn reset_camera(&mut self) {

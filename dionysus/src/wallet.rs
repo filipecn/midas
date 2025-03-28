@@ -1,6 +1,8 @@
 use crate::finance::{DiError, Position, Token};
+use crate::ERROR;
 use binance::account::Account;
 use binance::api::*;
+use slog::slog_error;
 use std::collections::HashMap;
 use std::fs::read_to_string;
 
@@ -77,7 +79,7 @@ mod tests {
 
     #[test]
     fn test_binance_wallet() {
-        let wallet = BinanceWallet::new();
+        let wallet = BinanceWallet::new("/home/filipecn/dev/midas/keys");
 
         match wallet.account.get_account() {
             Ok(answer) => println!("{:?}", answer.balances),

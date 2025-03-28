@@ -110,7 +110,7 @@ pub struct Advice {
 }
 
 #[derive(Clone, Default, Debug)]
-pub enum Oracle {
+pub enum Counselor {
     #[default]
     Trace,
     MeanReversion(usize),
@@ -123,7 +123,7 @@ macro_rules! match_oracle {
     ($func:ident, $words:expr) => {
         if $words.len() == 2 {
             match $words[1].parse::<usize>() {
-                Ok(n) => return Some(Oracle::$func(n)),
+                Ok(n) => return Some(Counselor::$func(n)),
                 Err(_) => (),
             }
         } else {
@@ -132,7 +132,7 @@ macro_rules! match_oracle {
     };
 }
 
-pub fn match_oracle_from_text(words: &[&str]) -> Option<Oracle> {
+pub fn match_oracle_from_text(words: &[&str]) -> Option<Counselor> {
     match words[0].to_uppercase().as_str() {
         "MEAN-REVERSION" => {
             match_oracle!(MeanReversion, words)
@@ -143,7 +143,7 @@ pub fn match_oracle_from_text(words: &[&str]) -> Option<Oracle> {
                 words[2].parse::<usize>(),
                 words[3].parse::<usize>(),
             ) {
-                return Some(Oracle::MACDCrossover((fp, sp, ss)));
+                return Some(Counselor::MACDCrossover((fp, sp, ss)));
             }
         }
         "MACD-ZERO-CROSS" => {
@@ -152,37 +152,41 @@ pub fn match_oracle_from_text(words: &[&str]) -> Option<Oracle> {
                 words[2].parse::<usize>(),
                 words[3].parse::<usize>(),
             ) {
-                return Some(Oracle::MACDZeroCross((fp, sp, ss)));
+                return Some(Counselor::MACDZeroCross((fp, sp, ss)));
             }
         }
         "EMA-CROSS" => {
             if let (Ok(fp), Ok(sp)) = (words[1].parse::<usize>(), words[2].parse::<usize>()) {
-                return Some(Oracle::EMACross((fp, sp)));
+                return Some(Counselor::EMACross((fp, sp)));
             }
         }
-        "TRACE" => return Some(Oracle::Trace),
+        "TRACE" => return Some(Counselor::Trace),
         _ => (),
     };
     None
 }
 
-impl Oracle {
+impl Counselor {
     pub fn required_samples(&self) -> usize {
         match self {
-            Oracle::Trace => 0,
-            Oracle::MeanReversion(n) => *n,
-            Oracle::MACDCrossover((_, sp, _)) => *sp,
-            Oracle::MACDZeroCross((_, sp, _)) => *sp,
-            Oracle::EMACross((_, sp)) => *sp,
+            Counselor::Trace => 0,
+            Counselor::MeanReversion(n) => *n,
+            Counselor::MACDCrossover((_, sp, _)) => *sp,
+            Counselor::MACDZeroCross((_, sp, _)) => *sp,
+            Counselor::EMACross((_, sp)) => *sp,
         }
     }
     pub fn run(&self, quote: &Quote, history: &[Sample]) -> Result<Advice, DiError> {
         match self {
-            Oracle::Trace => run_trace(quote),
-            Oracle::MeanReversion(n) => run_mean_reversion(*n, quote, history),
-            Self::MACDCrossover((fp, sp, ss)) => run_macd_crossover(*fp, *sp, *ss, quote, history),
-            Self::MACDZeroCross((fp, sp, ss)) => run_macd_zero_cross(*fp, *sp, *ss, quote, history),
-            Self::EMACross((fp, sp)) => run_ema_cross(*fp, *sp, quote, history),
+            Counselor::Trace => run_trace(quote),
+            Counselor::MeanReversion(n) => run_mean_reversion(*n, quote, history),
+            Counselor::MACDCrossover((fp, sp, ss)) => {
+                run_macd_crossover(*fp, *sp, *ss, quote, history)
+            }
+            Counselor::MACDZeroCross((fp, sp, ss)) => {
+                run_macd_zero_cross(*fp, *sp, *ss, quote, history)
+            }
+            Counselor::EMACross((fp, sp)) => run_ema_cross(*fp, *sp, quote, history),
         }
     }
     pub fn run_series(&self, samples: &[Sample]) -> Result<Vec<Advice>, DiError> {
@@ -206,23 +210,23 @@ impl Oracle {
     }
     pub fn indicators(&self) -> Vec<Indicator> {
         match self {
-            Oracle::MeanReversion(n) => {
+            Counselor::MeanReversion(n) => {
                 vec![Indicator::BollingerBands(BollingerBandsAttributes {
                     n: *n,
                     w: 2.0,
                 })]
             }
-            Oracle::MACDCrossover((fp, sp, ss)) => {
+            Counselor::MACDCrossover((fp, sp, ss)) => {
                 vec![Indicator::MovingAverageConvergenceDivergence((
                     *fp, *sp, *ss,
                 ))]
             }
-            Oracle::MACDZeroCross((fp, sp, ss)) => {
+            Counselor::MACDZeroCross((fp, sp, ss)) => {
                 vec![Indicator::MovingAverageConvergenceDivergence((
                     *fp, *sp, *ss,
                 ))]
             }
-            Oracle::EMACross((fp, sp)) => {
+            Counselor::EMACross((fp, sp)) => {
                 vec![
                     Indicator::ExponentialMovingAverage(*fp),
                     Indicator::ExponentialMovingAverage(*sp),
@@ -233,15 +237,15 @@ impl Oracle {
     }
     pub fn name(&self) -> String {
         match &self {
-            Oracle::Trace => format!("trace"),
-            Oracle::MeanReversion(n) => format!("mean-reversion({:?})", n),
-            Oracle::MACDCrossover((fp, sp, ss)) => {
+            Counselor::Trace => format!("trace"),
+            Counselor::MeanReversion(n) => format!("mean-reversion({:?})", n),
+            Counselor::MACDCrossover((fp, sp, ss)) => {
                 format!("macd-crossover({}, {}, {})", fp, sp, ss)
             }
-            Oracle::MACDZeroCross((fp, sp, ss)) => {
+            Counselor::MACDZeroCross((fp, sp, ss)) => {
                 format!("macd-zero-cross({}, {}, {})", fp, sp, ss)
             }
-            Oracle::EMACross((fp, sp)) => {
+            Counselor::EMACross((fp, sp)) => {
                 format!("ema-cross({}, {})", fp, sp)
             }
         }
@@ -408,7 +412,7 @@ fn run_ema_cross(
 
 #[cfg(test)]
 mod tests {
-    use crate::oracles::Crossover;
+    use crate::counselor::Crossover;
 
     use super::compute_crossover_s;
 

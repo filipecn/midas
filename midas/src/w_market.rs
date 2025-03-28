@@ -3,7 +3,8 @@ use std::cmp::Ordering;
 
 use crate::common;
 use crate::common::ListWindow;
-use dionysus::finance::MarketTick;
+use dionysus::finance::{MarketTick, Token};
+use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct MarketWindow {
@@ -11,8 +12,8 @@ pub struct MarketWindow {
 }
 
 impl MarketWindow {
-    pub fn update_with(&mut self, ticks: Vec<MarketTick>) {
-        self.list_window.items = ticks;
+    pub fn update_with(&mut self, ticks: HashMap<Token, MarketTick>) {
+        self.list_window.items = ticks.iter().map(|(_, tick)| tick.clone()).collect();
         self.list_window.items.sort_by(|a, b| {
             a.change_pct
                 .partial_cmp(&b.change_pct)

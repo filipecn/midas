@@ -1,29 +1,28 @@
+use std::collections::HashMap;
+
 use ratatui::text::Line;
 
-use crate::common;
 use crate::common::ListWindow;
-use dionysus::finance::{DiError, Quote, Sample};
-use dionysus::oracles::{Advice, Oracle, Signal};
-use dionysus::ERROR;
-use slog::slog_error;
+use crate::{common, midas::Chrysus};
+use dionysus::finance::Token;
+
+struct StrategyItem {
+    name: String,
+}
 
 #[derive(Default)]
 pub struct StrategyWindow {
-    oracles: Vec<(Oracle, Advice)>,
+    list: ListWindow<StrategyItem>,
 }
 
 impl StrategyWindow {
-    pub fn add_oracle(&mut self, oracle: &Oracle) {
-        self.oracles.push((oracle.clone(), Advice::default()));
-    }
-
-    pub fn run(&mut self, quote: &Quote, history: &[Sample]) {
-        for (oracle, advice) in &mut self.oracles {
-            match oracle.run(quote, history) {
-                Ok(a) => *advice = a,
-                Err(e) => ERROR!("{:?}", e),
-            }
-        }
+    pub fn update(&mut self, targets: &HashMap<Token, Chrysus>) {
+        self.list.items = targets
+            .iter()
+            .map(|(_, chrysus)| StrategyItem {
+                name: chrysus.name(),
+            })
+            .collect();
     }
 
     pub fn render(&mut self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
@@ -32,21 +31,8 @@ impl StrategyWindow {
     {
         let block = common::block("ORACLES");
 
-        let mut list: ListWindow<Line> = ListWindow::default();
-        for (oracle, advice) in &self.oracles {
-            let mut color = common::NORMAL_FG;
-            if advice.signal == Signal::Buy {
-                color = common::LOSS_COLOR;
-            } else if advice.signal == Signal::Sell {
-                color = common::PROFIT_COLOR;
-            }
-
-            list.items
-                .push(Line::styled(format!("{:?}", oracle), color));
-            list.items
-                .push(Line::styled(format!("  {:?}", advice), color));
-        }
-
-        list.render(area, buf, block, |s| s.clone());
+        self.list.render(area, buf, block, |item| {
+            Line::styled(item.name.as_str(), common::LOSS_COLOR)
+        });
     }
 }

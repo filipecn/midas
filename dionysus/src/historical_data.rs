@@ -149,13 +149,14 @@ impl HistoricalData for BinanceMarket {
                     }
                 }
             },
-            Err(e) => return Err(DiError::Message(format!("{:?}", e))),
+            Err(e) => return Err(DiError::Message(format!("FETCH LAST {:?}", e))),
         };
         if !samples.is_empty() {
             self.cache.write(token, &samples[..])?;
         }
         self.cache.read(token, duration)
     }
+
     fn get_last(&self, token: &Token, duration: &TimeWindow) -> Result<&[Sample], DiError> {
         self.cache.read(token, duration)
     }

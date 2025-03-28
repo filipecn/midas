@@ -36,6 +36,15 @@ impl Token {
         }
     }
 
+    pub fn name(&self) -> String {
+        match self {
+            Self::Pair((symbol, currency)) => format!("{}/{}", symbol, currency),
+            Self::Symbol(symbol) => symbol.clone(),
+            Self::Currency(currency) => currency.clone(),
+            Self::None => "NONE".to_string(),
+        }
+    }
+
     pub fn get_symbol(&self) -> String {
         match self {
             Self::Pair((symbol, _)) => symbol.clone(),
@@ -49,6 +58,14 @@ impl Token {
             Self::Pair((_, currency)) => currency.clone(),
             Self::Currency(currency) => currency.clone(),
             _ => String::new(),
+        }
+    }
+
+    pub fn symbol(&self) -> Token {
+        match self {
+            Self::Pair((s, _)) => Token::Symbol(s.clone()),
+            Self::Symbol(s) => Token::Symbol(s.clone()),
+            _ => Token::Symbol(String::new()),
         }
     }
 }
@@ -174,6 +191,7 @@ impl Book {
     }
 }
 
+#[derive(Clone, Default, Debug)]
 pub struct MarketTick {
     pub token: Token,
     pub price: f64,

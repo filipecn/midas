@@ -1,9 +1,8 @@
-pub mod backtrace;
+pub mod counselor;
 pub mod finance;
 pub mod historical_data;
 pub mod indicators;
 pub mod market;
-pub mod oracles;
 pub mod strategy;
 pub mod time;
 pub mod utils;
