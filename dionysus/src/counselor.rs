@@ -197,8 +197,8 @@ impl Counselor {
                 .run(
                     &Quote {
                         token: Token::default(),
-                        bid: samples[i].close,
-                        ask: samples[i].close,
+                        bid: Some(samples[i].close),
+                        ask: Some(samples[i].close),
                         biddate: Date::from_timestamp(samples[i].timestamp),
                         askdate: Date::from_timestamp(samples[i].timestamp),
                     },
@@ -254,7 +254,7 @@ impl Counselor {
 
 fn run_trace(quote: &Quote) -> Result<Advice, DiError> {
     let mut advice = Advice::default();
-    advice.stop_price = quote.ask;
+    advice.stop_price = quote.ask.unwrap_or(-1.0);
     Ok(advice)
 }
 
@@ -272,8 +272,8 @@ fn run_mean_reversion(n: usize, quote: &Quote, history: &[Sample]) -> Result<Adv
         Err(e) => return Err(e),
     };
 
-    let buy = quote.ask < lower;
-    let sell = quote.ask > upper;
+    let buy = quote.ask.unwrap_or(0.0) < lower;
+    let sell = quote.ask.unwrap_or(0.0) > upper;
 
     let mut advice = Advice::default();
     if buy {

@@ -48,8 +48,8 @@ pub fn generate_brownian_data(mu: f64, sigma: f64, duration: &TimeWindow) -> Vec
             token: Token::Symbol("brownian".to_string()),
             biddate: quote_date.clone(),
             askdate: quote_date.clone(),
-            bid: price,
-            ask: price,
+            bid: Some(price),
+            ask: Some(price),
         };
         quotes.push(quote);
         quote_date += time_increment;

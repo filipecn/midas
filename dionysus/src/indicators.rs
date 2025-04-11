@@ -125,7 +125,7 @@ pub fn bollinger_bands_s(n: usize, w: f64, samples: &[Sample]) -> Result<Indicat
 }
 
 pub fn bollinger_bands(n: usize, w: f64, samples: &[Sample]) -> Result<IndicatorData, DiError> {
-    match bollinger_bands_s(n, w, &samples[samples.len() - n..]) {
+    match bollinger_bands_s(n, w, &samples[samples.len().saturating_sub(n)..]) {
         Ok(IndicatorData::Matrix(r)) => Ok(IndicatorData::Matrix(vec![
             vec![r[0].last().unwrap().clone()],
             vec![r[1].last().unwrap().clone()],

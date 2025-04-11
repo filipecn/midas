@@ -27,6 +27,13 @@ impl Token {
         Token::Pair((symbol.to_string(), currency.to_string()))
     }
 
+    pub fn is_pair(&self) -> bool {
+        match self {
+            Self::Pair((_, _)) => true,
+            _ => false,
+        }
+    }
+
     pub fn to_string(&self) -> String {
         match self {
             Self::Pair((symbol, currency)) => format!("{}{}", symbol, currency),
@@ -84,6 +91,42 @@ pub struct Position {
     pub date: Date,
 }
 
+#[derive(Debug, Clone)]
+pub enum OrderType {
+    Market,
+    Limit,
+    Stop,
+    StopLimit,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Side {
+    Buy,
+    Sell,
+}
+
+#[derive(Clone, Debug)]
+pub enum TimeInForce {
+    GTC, // Good Till Cancel
+    IOC, // Immediate or Cancel
+    FOK, // Fill or Kill
+}
+
+#[derive(Clone, Debug)]
+pub struct Order {
+    pub index: usize,
+    pub position_index: Option<usize>,
+    pub id: Option<i64>,
+    pub token: Token,
+    pub date: Date,
+    pub side: Side,
+    pub quantity: f64,
+    pub price: f64,
+    pub stop_price: Option<f64>,
+    pub order_type: OrderType,
+    pub tif: TimeInForce,
+}
+
 /// A financial quote is the price at which an asset was last traded, or the
 /// price at which it can be bought or sold. It can also refer to the bid
 /// or ask price of a security.
@@ -91,9 +134,9 @@ pub struct Position {
 pub struct Quote {
     pub token: Token,
     /// The highest price a buyer is willing to pay.
-    pub bid: f64,
+    pub bid: Option<f64>,
     /// The lowest price a seller is willing to accept.
-    pub ask: f64,
+    pub ask: Option<f64>,
     pub biddate: Date,
     pub askdate: Date,
 }
@@ -170,18 +213,18 @@ impl Book {
                     .iter()
                     .max_by(|a, b| a.price.partial_cmp(&b.price).unwrap())
                 {
-                    l.price
+                    Some(l.price)
                 } else {
-                    0.0
+                    None
                 },
                 ask: if let Some(l) = self
                     .bids
                     .iter()
                     .min_by(|a, b| a.price.partial_cmp(&b.price).unwrap())
                 {
-                    l.price
+                    Some(l.price)
                 } else {
-                    0.0
+                    None
                 },
                 token: self.token.clone(),
                 biddate: Date::now(),

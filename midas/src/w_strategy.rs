@@ -2,9 +2,10 @@ use std::collections::HashMap;
 
 use ratatui::text::Line;
 
+use crate::common;
 use crate::common::ListWindow;
-use crate::{common, midas::Chrysus};
 use dionysus::finance::Token;
+use dionysus::strategy::Chrysus;
 
 struct StrategyItem {
     name: String,

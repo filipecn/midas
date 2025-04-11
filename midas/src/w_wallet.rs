@@ -2,18 +2,8 @@ use std::{cmp::Ordering, collections::HashMap};
 
 use crate::common;
 use crate::common::ListWindow;
-use dionysus::{
-    binance::BinanceMarket,
-    finance::{MarketTick, Token},
-    market::Market,
-    wallet::Asset,
-    ERROR,
-};
-use ratatui::{
-    text::Line,
-    widgets::{HighlightSpacing, List, ListItem, ListState, StatefulWidget},
-};
-use slog::slog_error;
+use dionysus::finance::{MarketTick, Token};
+use ratatui::text::Line;
 
 struct BalanceItem {
     asset: String,

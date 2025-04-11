@@ -1,3 +1,4 @@
+pub mod backtest;
 pub mod counselor;
 pub mod finance;
 pub mod historical_data;

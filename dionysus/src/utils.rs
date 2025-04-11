@@ -7,8 +7,8 @@ macro_rules! INFO {
 
 #[macro_export]
 macro_rules! ERROR {
-    ( $($args:tt),* ) => {
-        slog_error!(slog_scope::logger(),$($args),*);
+    ( $f:tt, $($args:ident),* ) => {
+        slog_error!(slog_scope::logger(),$f,$($args),*);
     };
 }
 

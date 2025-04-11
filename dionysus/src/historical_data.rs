@@ -23,19 +23,19 @@ pub fn sample_quotes(quotes: &[Quote], resolution: &TimeUnit) -> Vec<Sample> {
             }
             sample_start = quote.biddate.clone();
             sample.timestamp = quote.biddate.timestamp() as u64;
-            sample.open = quote.bid.clone();
-            sample.high = quote.bid.clone();
-            sample.low = quote.bid.clone();
-            sample.close = quote.bid.clone();
+            sample.open = quote.bid.unwrap();
+            sample.high = quote.bid.unwrap();
+            sample.low = quote.bid.unwrap();
+            sample.close = quote.bid.unwrap();
             sample.volume = 1;
         } else {
             sample.volume += 1;
-            sample.close = quote.bid.clone();
-            if quote.bid.total_cmp(&sample.high) == Ordering::Greater {
-                sample.high = quote.bid.clone();
+            sample.close = quote.bid.unwrap();
+            if quote.bid.unwrap().total_cmp(&sample.high) == Ordering::Greater {
+                sample.high = quote.bid.unwrap();
             }
-            if quote.bid.total_cmp(&sample.low) == Ordering::Less {
-                sample.low = quote.bid.clone();
+            if quote.bid.unwrap().total_cmp(&sample.low) == Ordering::Less {
+                sample.low = quote.bid.unwrap();
             }
         }
     }

@@ -2,54 +2,15 @@ use slog::slog_error;
 use std::collections::HashMap;
 
 use dionysus::{
+    backtest::backtest,
     binance::BinanceMarket,
     counselor::Counselor,
-    finance::{Book, MarketEvent, MarketTick, Position, Sample, Token},
+    finance::{MarketEvent, MarketTick, Order, Sample, Token},
     historical_data::HistoricalData,
-    strategy::{Decision, Strategy},
-    time::TimeWindow,
+    strategy::{Chrysus, Strategy},
     wallet::{BinanceWallet, DigitalWallet},
     ERROR,
 };
-
-pub struct Chrysus {
-    token: Token,
-    pub strategy: Strategy,
-    capital: f64,
-    positions: Vec<Position>,
-    balance: f64,
-    pub book: Book,
-}
-
-impl Chrysus {
-    pub fn new(token: &Token) -> Self {
-        Self {
-            token: token.clone(),
-            strategy: Strategy::default(),
-            capital: 0.0,
-            positions: Vec::new(),
-            balance: 0.0,
-            book: Book::default(),
-        }
-    }
-
-    pub fn name(&self) -> String {
-        format!("{} {}", self.token.to_string(), self.strategy.name())
-    }
-
-    pub fn decide(&mut self, book: Book, history: &impl HistoricalData) -> Option<Decision> {
-        self.book = book;
-        if let Some(quote) = self.book.quote() {
-            if let Ok(samples) = history.get_last(&self.token, &self.strategy.duration) {
-                match self.strategy.run(&quote, samples) {
-                    Ok(decision) => return Some(decision),
-                    Err(e) => ERROR!("{:?}", e),
-                };
-            }
-        }
-        None
-    }
-}
 
 pub enum MidasEvent {
     BookUpdate(Token),
@@ -86,13 +47,28 @@ impl Midas {
         };
     }
 
-    fn init_token(&mut self, token: &Token, duration: &TimeWindow) {
-        if let Err(e) = self.market.fetch_last(token, &duration) {
-            ERROR!("ERROR {:?} {:?}.", e, token);
-            return;
+    fn init_token(&mut self, token: &Token) {
+        if let Some(chrysus) = self.hesperides.get(token) {
+            if chrysus.token.is_pair() {
+                match self
+                    .market
+                    .fetch_last(&chrysus.token, &chrysus.strategy.duration)
+                {
+                    Ok(samples) => {
+                        // compute strategy performance
+                        backtest(&chrysus, samples);
+                    }
+                    Err(e) => {
+                        let t = chrysus.token.clone();
+                        ERROR!("ERROR {:?} {:?}.", e, t);
+                        return;
+                    }
+                }
+                self.market
+                    .kline_service(&chrysus.token, &chrysus.strategy.duration.resolution);
+                self.market.order_book_service(&chrysus.token);
+            }
         }
-        self.market.kline_service(token, &duration.resolution);
-        self.market.order_book_service(token);
     }
 
     pub fn add_token(&mut self, token: &Token) -> bool {
@@ -130,7 +106,7 @@ impl Midas {
         if let Some(t) = self.hesperides.get_mut(token) {
             t.strategy = strategy.clone();
             t.strategy.counselors.push(Counselor::MeanReversion(20));
-            self.init_token(token, &strategy.duration);
+            self.init_token(&token);
         }
     }
 
@@ -183,10 +159,8 @@ impl Midas {
                 MarketEvent::OrderBook(book) => {
                     let token = book.token.clone();
                     if let Some(t) = &mut self.hesperides.get_mut(&token) {
-                        t.decide(book, &self.market);
-                        //if let Some(decision) = t.decide(book, &self.market) {
-                        //    self.submit(&token, &decision);
-                        //}
+                        //let orders = t.decide(book, &self.market);
+                        //submit(orders);
                         events.push(MidasEvent::BookUpdate(token));
                     }
                 }
@@ -195,5 +169,5 @@ impl Midas {
         events
     }
 
-    fn submit(&mut self, token: &Token, decision: &Decision) {}
+    fn submit(&mut self, orders: Vec<Order>) {}
 }
