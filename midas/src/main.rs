@@ -1,11 +1,9 @@
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode};
-use dionysus::binance::BinanceMarket;
-use dionysus::counselor::match_oracle_from_text;
-use dionysus::finance::{DiError, MarketEvent, Quote, Sample, Token};
+use dionysus::finance::Token;
 use dionysus::historical_data::HistoricalData;
 use dionysus::indicators::match_indicator_from_text;
-use dionysus::time::{TimeUnit, TimeWindow};
+use dionysus::time::TimeUnit;
 use dionysus::ERROR;
 use ratatui::{
     layout::{Constraint, Flex, Layout, Position},
@@ -342,6 +340,7 @@ impl App {
                     self.set_history_size(n);
                 }
             }
+            "BACKTEST" => self.run_backtest(&words[1..]),
             _ => (),
         };
     }
@@ -367,6 +366,15 @@ impl App {
         //    }
         //    None => (),
         //};
+    }
+
+    fn run_backtest(&mut self, _words: &[&str]) {
+        if let Some((curr_index, current_token)) = self.symbol_tabs.current() {
+            let bt = self
+                .midas
+                .run_backtest(&current_token, &self.stock_views[curr_index].time_window);
+            self.stock_views[curr_index].set_backtest(&bt);
+        }
     }
 
     fn exit(&mut self) {

@@ -1,8 +1,9 @@
-use std::{cmp::Ordering, collections::HashMap};
+use std::collections::HashMap;
 
 use crate::common;
 use crate::common::ListWindow;
 use dionysus::finance::{MarketTick, Token};
+use dionysus::utils::compute_change_pct;
 use ratatui::text::Line;
 
 struct BalanceItem {
@@ -17,14 +18,6 @@ pub struct WalletWindow {
     list_window: ListWindow<BalanceItem>,
     total: f64,
     total_change: f64,
-}
-
-fn compute_change_pct(start: f64, end: f64) -> f64 {
-    if start.total_cmp(&end) == Ordering::Greater {
-        start / end
-    } else {
-        -end / start
-    }
 }
 
 impl WalletWindow {

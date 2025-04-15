@@ -6,6 +6,7 @@ pub mod indicators;
 pub mod market;
 pub mod strategy;
 pub mod time;
+pub mod trader;
 pub mod utils;
 pub mod wallet;
 

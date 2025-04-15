@@ -2,7 +2,7 @@ use slog::slog_info;
 use slog_scope;
 
 use crate::{
-    finance::{DiError, Quote, Sample, Token},
+    finance::{DiError, OrderType, Quote, Sample, TimeInForce, Token},
     indicators::{BollingerBandsAttributes, Indicator, IndicatorData},
     time::Date,
     INFO,
@@ -104,9 +104,11 @@ pub enum Signal {
 #[derive(Default, Debug, Clone)]
 pub struct Advice {
     pub signal: Signal,
+    pub order_type: OrderType,
     pub stop_price: f64,
     pub stop_loss: f64,
     pub take_profit: f64,
+    pub tif: TimeInForce,
 }
 
 #[derive(Clone, Default, Debug)]

@@ -1,9 +1,10 @@
 use crate::g_indicators::IndicatorsGraph;
-use dionysus::{counselor::Advice, finance::Sample, strategy::Strategy};
+use dionysus::{backtest::Backtest, counselor::Advice, finance::Sample, strategy::Strategy};
 
 #[derive(Default)]
 pub struct StrategyGraph {
     pub indicators: IndicatorsGraph,
+    pub backtest: Backtest,
     pub advices: Vec<Advice>,
 }
 
@@ -14,6 +15,10 @@ impl StrategyGraph {
                 self.indicators.add_indicator(&i);
             }
         }
+    }
+
+    pub fn set_backtest(&mut self, backtest: &Backtest) {
+        self.backtest = backtest.clone();
     }
 
     pub fn compute(&mut self, samples: &[Sample]) {

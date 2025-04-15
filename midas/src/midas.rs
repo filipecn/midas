@@ -2,12 +2,13 @@ use slog::slog_error;
 use std::collections::HashMap;
 
 use dionysus::{
-    backtest::backtest,
+    backtest::{backtest, Backtest},
     binance::BinanceMarket,
     counselor::Counselor,
     finance::{MarketEvent, MarketTick, Order, Sample, Token},
     historical_data::HistoricalData,
     strategy::{Chrysus, Strategy},
+    time::TimeWindow,
     wallet::{BinanceWallet, DigitalWallet},
     ERROR,
 };
@@ -81,6 +82,18 @@ impl Midas {
         strategy.duration.count = 200;
         self.set_strategy(token, &strategy);
         return self.is_token_ok(token);
+    }
+
+    pub fn run_backtest(&mut self, token: &Token, period: &TimeWindow) -> Backtest {
+        if let Some(t) = self.hesperides.get_mut(token) {
+            match self.market.get_last(token, &period) {
+                Ok(samples) => {
+                    return backtest(&t, samples);
+                }
+                Err(e) => ERROR!("{:?}", e),
+            }
+        }
+        Backtest::default()
     }
 
     pub fn get_history(&self, token: &Token) -> Option<&[Sample]> {

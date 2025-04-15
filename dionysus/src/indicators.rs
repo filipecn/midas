@@ -136,7 +136,7 @@ pub fn bollinger_bands(n: usize, w: f64, samples: &[Sample]) -> Result<Indicator
     }
 }
 
-fn round(nums: (f64, f64, f64)) -> (f64, f64, f64) {
+fn _round(nums: (f64, f64, f64)) -> (f64, f64, f64) {
     let n0 = (nums.0 * 100.0).round() / 100.0;
     let n1 = (nums.1 * 100.0).round() / 100.0;
     let n2 = (nums.2 * 100.0).round() / 100.0;

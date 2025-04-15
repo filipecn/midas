@@ -128,6 +128,13 @@ impl GraphElement for StrategyGraph {
                     );
                 }
             }
+            for order in &self.backtest.orders {
+                ctx.print(
+                    domain.x(order.date.timestamp() as u64),
+                    order.price,
+                    format!("{:?}", order.side), //.set_style(color_from_signal(&advice.signal)),
+                );
+            }
         }
     }
 }

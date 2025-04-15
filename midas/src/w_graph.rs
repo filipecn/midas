@@ -12,13 +12,11 @@ use crate::{
     g_samples::SamplesGraph, g_strategy::StrategyGraph,
 };
 use dionysus::{
+    backtest::Backtest,
     finance::Sample,
     indicators::{Indicator, IndicatorSource},
     time::TimeWindow,
-    INFO,
 };
-
-use slog::slog_info;
 
 pub struct StockGraph {
     pub book_w: BookGraph,
@@ -55,10 +53,18 @@ impl StockGraph {
         self.time_window.count = samples.len() as i64;
         self.strategies[self.selected_strategy].1.compute(samples);
         self.book_w.x_pos = samples.len() as f64;
+        self.candle_w.timestamp = samples[0].timestamp;
+        self.candle_w.time_step = samples[0].resolution.num_seconds() as u64 * 1000;
     }
 
     pub fn add_indicator(&mut self, indicator: &Indicator) {
         self.strategies[0].1.indicators.add_indicator(indicator);
+    }
+
+    pub fn set_backtest(&mut self, backtest: &Backtest) {
+        self.strategies[self.selected_strategy]
+            .1
+            .set_backtest(backtest);
     }
 
     pub fn reset_camera(&mut self) {

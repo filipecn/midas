@@ -34,6 +34,13 @@ impl Token {
         }
     }
 
+    pub fn reverse(&self) -> Token {
+        match self {
+            Self::Pair((symbol, currency)) => Token::pair(currency, symbol),
+            _ => self.clone(),
+        }
+    }
+
     pub fn to_string(&self) -> String {
         match self {
             Self::Pair((symbol, currency)) => format!("{}{}", symbol, currency),
@@ -89,13 +96,15 @@ pub struct Position {
     pub quantity: f64,
     pub price: f64,
     pub date: Date,
+    pub attached_order: Option<usize>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub enum OrderType {
+    #[default]
     Market,
     Limit,
-    Stop,
+    StopMarket,
     StopLimit,
 }
 
@@ -105,8 +114,9 @@ pub enum Side {
     Sell,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub enum TimeInForce {
+    #[default]
     GTC, // Good Till Cancel
     IOC, // Immediate or Cancel
     FOK, // Fill or Kill

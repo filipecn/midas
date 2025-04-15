@@ -3,10 +3,15 @@ use ratatui::{
     widgets::canvas::Context,
 };
 
-#[derive(Default)]
+use dionysus::INFO;
+use slog::slog_info;
+
+#[derive(Default, Debug)]
 pub struct ChartDomain {
     pub bounds: [[f64; 2]; 2],
     pub dx: f64,
+    pub timestamp: u64,
+    pub time_step: u64,
 }
 
 impl ChartDomain {
@@ -16,6 +21,10 @@ impl ChartDomain {
 
     pub fn sample_count(&self) -> u64 {
         (self.size(0) / self.dx) as u64
+    }
+
+    pub fn x(&self, timestamp: u64) -> f64 {
+        (timestamp.saturating_sub(self.timestamp) / self.time_step) as f64 * self.dx
     }
 
     pub fn draw(&self, ctx: &mut Context) {

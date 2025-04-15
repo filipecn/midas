@@ -114,6 +114,7 @@ impl Chrysus {
         );
         ERROR!("{:?}", s);
     }
+
     fn compute_orders(&mut self, quote: &Quote, decision: &Decision) -> Vec<Order> {
         let mut orders: Vec<Order> = Vec::new();
         match decision.advice.signal {
@@ -133,8 +134,8 @@ impl Chrysus {
                         side: Side::Buy,
                         price: decision.advice.stop_price,
                         stop_price: Some(decision.advice.stop_price),
-                        order_type: OrderType::StopLimit,
-                        tif: TimeInForce::IOC,
+                        order_type: decision.advice.order_type.clone(),
+                        tif: decision.advice.tif.clone(),
                     };
                     orders.push(order.clone());
                     self.orders.insert(self.next_order_index, order);
@@ -142,22 +143,28 @@ impl Chrysus {
                 }
             }
             Signal::Sell => {
-                for (position_index, position) in &self.positions {
-                    let order = Order {
-                        index: self.next_order_index,
-                        position_index: Some(*position_index),
-                        id: None,
-                        token: quote.token.clone(),
-                        date: Date::now(),
-                        quantity: position.quantity,
-                        side: Side::Sell,
-                        price: decision.advice.stop_price,
-                        stop_price: Some(decision.advice.stop_price),
-                        order_type: OrderType::Stop,
-                        tif: TimeInForce::IOC,
-                    };
-                    orders.push(order.clone());
-                    self.orders.insert(self.next_order_index, order);
+                for (position_index, position) in &mut self.positions {
+                    if position.attached_order == None
+                        && decision.advice.stop_price > position.price
+                    {
+                        let order = Order {
+                            index: self.next_order_index,
+                            position_index: Some(*position_index),
+                            id: None,
+                            token: quote.token.clone(),
+                            date: Date::now(),
+                            quantity: position.quantity,
+                            side: Side::Sell,
+                            price: decision.advice.stop_price,
+                            stop_price: Some(decision.advice.stop_price),
+                            order_type: decision.advice.order_type.clone(),
+                            tif: decision.advice.tif.clone(),
+                        };
+                        position.attached_order = Some(self.next_order_index);
+                        orders.push(order.clone());
+                        self.orders.insert(self.next_order_index, order);
+                        self.next_order_index += 1;
+                    }
                 }
             }
             _ => (),
@@ -183,6 +190,7 @@ impl Chrysus {
                         token: order.token.clone(),
                         quantity: order.quantity,
                         date: order.date,
+                        attached_order: None,
                     },
                 );
                 self.balance += order.quantity;
