@@ -6,7 +6,7 @@ edition.workspace = true
 documentation.workspace = true
 
 [dependencies]
-chrono = "0.4.38"
+chrono = { version = "0.4.38", features = ["serde"] }
 time = "0.3.37"
 yahoo_finance_api = {"version" = "2.4.0", features = ["blocking"]}
 rand = { version = "0.8", features = ["std_rng"] }
@@ -19,3 +19,5 @@ threadpool = "1.8.1"
 slog = "2.7.0"
 slog-scope = "4.4.0"
 slog-term = "2.9.1"
+serde = "1.0.219"
+serde_json = "1.0"

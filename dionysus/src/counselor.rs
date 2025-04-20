@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use slog::slog_info;
 use slog_scope;
 
@@ -111,7 +112,7 @@ pub struct Advice {
     pub tif: TimeInForce,
 }
 
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub enum Counselor {
     #[default]
     Trace,

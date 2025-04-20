@@ -13,39 +13,54 @@ use dionysus::{
     ERROR,
 };
 
+use std::fs::File;
+
 pub enum MidasEvent {
     BookUpdate(Token),
     KLineUpdate(Token),
 }
 
 pub struct Midas {
-    account: BinanceWallet,
+    pub wallet: BinanceWallet,
     pub market: BinanceMarket,
     pub hesperides: HashMap<Token, Chrysus>,
     pub ticks: HashMap<Token, MarketTick>,
+    balance: HashMap<Token, f64>,
 }
 
 impl Midas {
-    pub fn new(keys_file: &str) -> Midas {
+    pub fn new(keys_file: &str, use_test_api: bool) -> Midas {
         Self {
-            account: BinanceWallet::new(&keys_file),
-            market: BinanceMarket::default(),
+            wallet: BinanceWallet::new(&keys_file, use_test_api),
+            market: BinanceMarket::new(use_test_api),
             hesperides: HashMap::new(),
             ticks: HashMap::new(),
+            balance: HashMap::new(),
         }
     }
 
     pub fn init(&mut self) {
         self.market.day_ticker_all_service("USDT");
-        match self.account.get_balance() {
+        self.balance = HashMap::new();
+        match self.wallet.get_balance() {
             Ok(balance) => {
                 for (token, asset) in balance {
-                    self.add_token(&token);
-                    self.set_balance(&token, asset.free);
+                    self.balance.insert(token.clone(), asset.free);
                 }
             }
             Err(e) => ERROR!("{:?}", e),
         };
+    }
+
+    pub fn save_state(&self, filename: &String) {
+        let mut cs: Vec<Chrysus> = Vec::new();
+        for (_, c) in &self.hesperides {
+            cs.push(c.clone());
+        }
+        let file = File::create(filename.as_str()).unwrap();
+        if let Err(e) = serde_json::to_writer_pretty(file, &cs) {
+            ERROR!("{:?}", e);
+        }
     }
 
     fn init_token(&mut self, token: &Token) {
@@ -81,6 +96,7 @@ impl Midas {
         let mut strategy = Strategy::default();
         strategy.duration.count = 200;
         self.set_strategy(token, &strategy);
+
         return self.is_token_ok(token);
     }
 
@@ -128,19 +144,7 @@ impl Midas {
     }
 
     pub fn get_balance(&self) -> HashMap<Token, f64> {
-        let mut m: HashMap<Token, f64> = HashMap::new();
-        for (token, chrysus) in &self.hesperides {
-            if chrysus.balance > 0.0 {
-                m.insert(token.clone(), chrysus.balance.clone());
-            }
-        }
-        m
-    }
-
-    fn set_balance(&mut self, token: &Token, balance: f64) {
-        if let Some(t) = self.hesperides.get_mut(token) {
-            t.balance = balance;
-        }
+        self.balance.clone()
     }
 
     fn update_ticks(&mut self, ticks: Vec<MarketTick>) {
@@ -171,9 +175,9 @@ impl Midas {
                 MarketEvent::Ticks(ticks) => self.update_ticks(ticks),
                 MarketEvent::OrderBook(book) => {
                     let token = book.token.clone();
-                    if let Some(t) = &mut self.hesperides.get_mut(&token) {
+                    if let Some(_t) = &mut self.hesperides.get_mut(&token) {
                         //let orders = t.decide(book, &self.market);
-                        //submit(orders);
+                        //_submit(orders);
                         events.push(MidasEvent::BookUpdate(token));
                     }
                 }
@@ -182,5 +186,5 @@ impl Midas {
         events
     }
 
-    fn submit(&mut self, orders: Vec<Order>) {}
+    fn _submit(&mut self, _orders: Vec<Order>) {}
 }

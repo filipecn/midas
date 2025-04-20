@@ -1,3 +1,4 @@
+use clap::Parser;
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode};
 use dionysus::finance::Token;
@@ -65,12 +66,13 @@ pub struct App {
     log_w: LogWindow,
     strategy_w: StrategyWindow,
     show_log: bool,
+    state_file: String,
 }
 
 impl App {
-    pub fn new(keys_file: &str) -> App {
+    pub fn new(keys_file: &str, use_test_api: bool) -> App {
         App {
-            midas: Midas::new(keys_file),
+            midas: Midas::new(keys_file, use_test_api),
             exit: false,
             stock_views: Vec::new(),
             symbol_tabs: SymbolTabs::default(),
@@ -82,6 +84,7 @@ impl App {
             log_w: LogWindow::default(),
             strategy_w: StrategyWindow::default(),
             show_log: false,
+            state_file: String::from("state.json"),
         }
     }
 
@@ -335,6 +338,7 @@ impl App {
             "GRAPH" => self.add_indicator(&words[1..]),
             "RES" => self.set_resolution(&words[1]),
             "ORACLE" => self.add_oracle(&words[1..]),
+            "SAVE" => self.midas.save_state(&self.state_file),
             "HIST" => {
                 if let Ok(n) = words[1].parse::<usize>() {
                     self.set_history_size(n);
@@ -382,11 +386,24 @@ impl App {
     }
 }
 
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// File containing the secret and API keys
+    #[arg(short, long)]
+    keys: String,
+
+    /// Number of times to greet
+    #[arg(short, long, default_value_t = false)]
+    test: bool,
+}
+
 fn main() -> Result<()> {
+    let args = Args::parse();
     let _guard = w_log::init();
     color_eyre::install()?;
     let mut terminal = ratatui::init();
-    let app_result = App::new("/home/filipecn/dev/midas/keys").run(&mut terminal);
+    let app_result = App::new(args.keys.as_str(), args.test).run(&mut terminal);
     ratatui::restore();
     Ok(app_result?)
 }

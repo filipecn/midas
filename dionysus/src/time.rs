@@ -1,10 +1,11 @@
 use chrono::{DateTime, TimeDelta, Utc};
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use std;
 use std::hash::{Hash, Hasher};
 
 /// Time measurement unit.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TimeUnit {
     Sec(u32),
     Min(u32),
@@ -84,7 +85,7 @@ impl Hash for TimeUnit {
     }
 }
 
-#[derive(Debug, Copy, Default, Clone)]
+#[derive(Debug, Copy, Default, Clone, Serialize, Deserialize)]
 pub struct TimeWindow {
     pub resolution: TimeUnit,
     pub count: i64,
@@ -111,7 +112,7 @@ impl TimeWindow {
     }
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Date {
     utc: DateTime<Utc>,
 }
@@ -174,7 +175,7 @@ impl std::ops::AddAssign<TimeWindow> for Date {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub struct Period {
     pub duration: TimeWindow,
     start: Date,

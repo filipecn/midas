@@ -6,9 +6,11 @@ use crate::{
     ERROR,
 };
 
-use std::collections::HashMap;
-
+use serde::de::{Deserializer, MapAccess, Visitor};
+use serde::ser::{SerializeStruct, Serializer};
+use serde::{Deserialize, Serialize};
 use slog::slog_error;
+use std::collections::HashMap;
 
 #[derive(Default, Debug)]
 pub struct Decision {
@@ -16,7 +18,7 @@ pub struct Decision {
     pub pct: f64,
 }
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub enum Oracle {
     #[default]
     Delphi,
@@ -53,7 +55,7 @@ impl Oracle {
     }
 }
 
-#[derive(Default, Clone, Debug)]
+#[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct Strategy {
     pub oracle: Oracle,
     pub counselors: Vec<Counselor>,
@@ -82,6 +84,57 @@ pub struct Chrysus {
     pub orders: HashMap<usize, Order>,
     next_position_index: usize,
     next_order_index: usize,
+}
+
+impl Serialize for Chrysus {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("Chrysus", 4)?;
+        state.serialize_field("token", &self.token)?;
+        state.serialize_field("strategy", &self.strategy)?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for Chrysus {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ChrysusVisitor;
+        impl<'de> Visitor<'de> for ChrysusVisitor {
+            type Value = Chrysus;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("chrysus")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::MapAccess<'de>,
+            {
+                let mut token = None;
+                let mut strategy = None;
+
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        "token" => token = Some(map.next_value()?),
+                        "strategy" => strategy = Some(map.next_value()?),
+                        _ => (), //Err(A::Error::unknown_field()),
+                    }
+                }
+
+                let mut chrysus = Chrysus::new(&token.unwrap());
+                chrysus.strategy = strategy.unwrap();
+                Ok(chrysus)
+            }
+        }
+
+        const FIELDS: &[&str] = &["token", "strategy"];
+        deserializer.deserialize_struct("Chrysus", FIELDS, ChrysusVisitor)
+    }
 }
 
 impl Chrysus {

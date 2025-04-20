@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 
 use super::time::{Date, TimeUnit};
@@ -13,7 +14,7 @@ pub enum DiError {
     None,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum Token {
     Symbol(String),
     Currency(String),
@@ -90,7 +91,7 @@ impl Hash for Token {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Position {
     pub token: Token,
     pub quantity: f64,
@@ -99,7 +100,7 @@ pub struct Position {
     pub attached_order: Option<usize>,
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub enum OrderType {
     #[default]
     Market,
@@ -108,13 +109,13 @@ pub enum OrderType {
     StopLimit,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Side {
     Buy,
     Sell,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub enum TimeInForce {
     #[default]
     GTC, // Good Till Cancel
@@ -122,7 +123,7 @@ pub enum TimeInForce {
     FOK, // Fill or Kill
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Order {
     pub index: usize,
     pub position_index: Option<usize>,
@@ -199,13 +200,13 @@ impl Sample {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BookLine {
     pub price: f64,
     pub quantity: f64,
 }
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 pub struct Book {
     pub token: Token,
     pub bids: Vec<BookLine>,

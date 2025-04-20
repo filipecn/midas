@@ -3,6 +3,7 @@ use crate::finance::{Book, BookLine, DiError, MarketEvent, MarketTick, Sample, T
 use crate::time::TimeUnit;
 use crate::{ERROR, INFO};
 use binance;
+use binance::config::Config;
 use binance::websockets::*;
 use slog::{self, slog_error, slog_info};
 use std::collections::HashMap;
@@ -36,6 +37,8 @@ impl Default for BinanceStream {
             .lines() // split the string into an iterator of string slices
             .map(String::from) // make each slice into a string
             .collect();
+        // 0: secret_key
+        // 1: api key
         let api_key = Some(keys[1].clone().into());
         Self {
             stream: binance::api::Binance::new(api_key, None),
@@ -84,19 +87,28 @@ impl BinanceStream {
     }
 }
 
-impl Default for BinanceMarket {
-    fn default() -> Self {
-        Self {
-            market: binance::api::Binance::new(None, None),
-            cache: Cache::default(),
-            pool: ThreadPool::new(MAX_CONCURRENT_THREADS),
-            event_channel: mpsc::channel(),
-            thread_control: Arc::new(Mutex::new(HashMap::new())),
+impl BinanceMarket {
+    pub fn new(use_test_api: bool) -> Self {
+        if use_test_api {
+            let config = Config::default().set_rest_api_endpoint("https://testnet.binance.vision");
+            Self {
+                market: binance::api::Binance::new_with_config(None, None, &config),
+                cache: Cache::default(),
+                pool: ThreadPool::new(MAX_CONCURRENT_THREADS),
+                event_channel: mpsc::channel(),
+                thread_control: Arc::new(Mutex::new(HashMap::new())),
+            }
+        } else {
+            Self {
+                market: binance::api::Binance::new(None, None),
+                cache: Cache::default(),
+                pool: ThreadPool::new(MAX_CONCURRENT_THREADS),
+                event_channel: mpsc::channel(),
+                thread_control: Arc::new(Mutex::new(HashMap::new())),
+            }
         }
     }
-}
 
-impl BinanceMarket {
     pub fn get_events(&self) -> Vec<MarketEvent> {
         let mut events: Vec<MarketEvent> = Vec::new();
         for event in self.event_channel.1.try_iter() {
