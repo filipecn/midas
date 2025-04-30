@@ -4,16 +4,24 @@ use crate::{
     strategy::Chrysus,
     time::{Date, TimeWindow},
     utils::compute_change_pct,
-    ERROR, INFO,
 };
-
-use slog::slog_error;
 
 #[derive(Default, Clone)]
 pub struct Backtest {
+    pub initial_capital: f64,
     pub orders: Vec<Order>,
-    pub pct: f64,
     pub period: TimeWindow,
+    pub currency_balance: f64,
+    pub symbol_balance: f64,
+}
+
+impl Backtest {
+    pub fn compute_profit(&self, tick: f64) -> f64 {
+        compute_change_pct(
+            self.initial_capital,
+            self.currency_balance + tick * self.symbol_balance,
+        )
+    }
 }
 
 struct BacktestData<'a> {
@@ -50,12 +58,14 @@ pub fn backtest(chrysus: &Chrysus, history: &[Sample]) -> Backtest {
     let mut c: Chrysus = chrysus.clone();
     c.capital = capital;
     let mut backtest_result = Backtest::default();
+    backtest_result.initial_capital = capital;
     backtest_result.period = TimeWindow {
         resolution: history[0].resolution,
         count: history.len() as i64,
     };
     let mut backtest_data = BacktestData::new(history);
-    for i in 1..history.len() {
+    let offset = chrysus.strategy.required_history_size();
+    for i in offset..history.len() {
         backtest_data.sample_index = i;
         let book = Book {
             token: chrysus.token.clone(),
@@ -75,6 +85,7 @@ pub fn backtest(chrysus: &Chrysus, history: &[Sample]) -> Backtest {
             backtest_result.orders.push(order.clone());
         }
     }
-    backtest_result.pct = compute_change_pct(capital, c.capital);
+    backtest_result.currency_balance = c.capital;
+    backtest_result.symbol_balance = c.balance;
     backtest_result
 }

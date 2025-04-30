@@ -1,6 +1,7 @@
 use clap::Parser;
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode};
+use dionysus::backtest::Backtest;
 use dionysus::finance::Token;
 use dionysus::historical_data::HistoricalData;
 use dionysus::indicators::match_indicator_from_text;
@@ -13,6 +14,7 @@ use ratatui::{
 };
 use slog::slog_error;
 use slog_scope;
+use std::collections::HashMap;
 use std::io;
 
 mod common;
@@ -37,7 +39,7 @@ mod w_wallet;
 use common::popup_area;
 use midas::{Midas, MidasEvent};
 use w_command::CommandInput;
-use w_graph::StockGraph;
+use w_graph::GraphView;
 use w_interactible::Interactible;
 use w_log::LogWindow;
 use w_market::MarketWindow;
@@ -56,7 +58,7 @@ enum InputMode {
 pub struct App {
     midas: Midas,
     exit: bool,
-    stock_views: Vec<StockGraph>,
+    graph_views: HashMap<usize, GraphView>,
     symbol_tabs: SymbolTabs,
     command_w: CommandInput,
     input_mode: InputMode,
@@ -67,6 +69,7 @@ pub struct App {
     strategy_w: StrategyWindow,
     show_log: bool,
     state_file: String,
+    backtests: HashMap<usize, Backtest>,
 }
 
 impl App {
@@ -74,7 +77,7 @@ impl App {
         App {
             midas: Midas::new(keys_file, use_test_api),
             exit: false,
-            stock_views: Vec::new(),
+            graph_views: HashMap::new(),
             symbol_tabs: SymbolTabs::default(),
             command_w: CommandInput::default(),
             input_mode: InputMode::default(),
@@ -85,6 +88,22 @@ impl App {
             strategy_w: StrategyWindow::default(),
             show_log: false,
             state_file: String::from("state.json"),
+            backtests: HashMap::new(),
+        }
+    }
+
+    fn open_tab(&mut self, midas_index: usize) {
+        if let Some(c) = self.midas.get(midas_index) {
+            if c.token.is_pair() {
+                if let Some(samples) = self.midas.get_history(midas_index) {
+                    let mut graph = GraphView::default();
+                    graph.set_strategy(&c.strategy);
+                    graph.set_data(samples);
+                    graph.reset_camera();
+                    self.graph_views.insert(midas_index, graph);
+                    self.symbol_tabs.add(&c.token, midas_index);
+                }
+            }
         }
     }
 
@@ -94,60 +113,61 @@ impl App {
             String::from(currency).to_uppercase().as_str(),
         );
 
-        if self.midas.add_token(&pair) {
-            if let Some(samples) = self.midas.get_history(&pair) {
-                let mut stock_graph = StockGraph::default();
-                stock_graph.set_data(samples);
-                stock_graph.reset_camera();
-                self.stock_views.push(stock_graph);
-                self.symbol_tabs.add(&pair);
-            }
+        if let Some(index) = self.midas.add_token(&pair) {
+            self.open_tab(index);
         }
     }
 
     fn set_history_size(&mut self, n: usize) {
-        if let Some((i, pair)) = self.symbol_tabs.current() {
-            let mut time_window = self.stock_views[i].time_window.clone();
-            time_window.count = n as i64;
-            match self.midas.market.fetch_last(&pair, &time_window) {
-                Ok(samples) => self.stock_views[i].set_data(samples),
-                Err(e) => ERROR!("{:?}", e),
-            }
-        }
-    }
-
-    fn set_resolution(&mut self, resolution_name: &str) {
-        if let Some((i, curr_token)) = self.symbol_tabs.current() {
-            if let Some(c) = self.midas.get(&curr_token) {
-                let mut s = c.strategy.clone();
-                s.duration.resolution = TimeUnit::from_name(resolution_name);
-                self.midas.set_strategy(&curr_token, &s);
-
-                match self.midas.market.get_last(&curr_token, &s.duration) {
-                    Ok(samples) => self.stock_views[i].set_data(samples),
+        if let Some((midas_index, pair)) = self.symbol_tabs.current() {
+            if let Some(graph_view) = self.graph_views.get_mut(&midas_index) {
+                let mut time_window = graph_view.time_window.clone();
+                time_window.count = n as i64;
+                match self.midas.market.fetch_last(&pair, &time_window) {
+                    Ok(samples) => graph_view.set_data(samples),
                     Err(e) => ERROR!("{:?}", e),
                 }
             }
         }
     }
 
-    fn update_graph(&mut self, token: &Token) {
-        for i in 0..self.symbol_tabs.tab_count() {
-            if *token == self.symbol_tabs.tab(i).unwrap() {
-                let time_window = self.stock_views[i].time_window.clone();
-                match self.midas.market.get_last(token, &time_window) {
-                    Ok(samples) => {
-                        self.stock_views[i].set_data(samples);
+    fn set_resolution(&mut self, resolution_name: &str) {
+        if let Some((midas_index, curr_token)) = self.symbol_tabs.current() {
+            if let Some(c) = self.midas.get(midas_index) {
+                let mut s = c.strategy.clone();
+                s.duration.resolution = TimeUnit::from_name(resolution_name);
+                self.midas.set_strategy(midas_index, &s);
+                if let Some(graph_view) = self.graph_views.get_mut(&midas_index) {
+                    match self.midas.market.get_last(&curr_token, &s.duration) {
+                        Ok(samples) => graph_view.set_data(samples),
+                        Err(e) => ERROR!("{:?}", e),
                     }
-                    Err(e) => ERROR!("{:?}", e),
-                };
+                }
+            }
+        }
+    }
+
+    fn update_graph(&mut self, midas_index: usize) {
+        if let Some((index, curr_token)) = self.symbol_tabs.current() {
+            if index == midas_index {
+                if let Some(graph_view) = self.graph_views.get_mut(&midas_index) {
+                    let time_window = graph_view.time_window.clone();
+                    match self.midas.market.get_last(&curr_token, &time_window) {
+                        Ok(samples) => {
+                            graph_view.set_data(samples);
+                        }
+                        Err(e) => ERROR!("{:?}", e),
+                    };
+                }
             }
         }
     }
 
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
-        self.midas.init();
-        self.add_tab("btc", "usdt");
+        self.midas.init(&self.state_file);
+        for midas_index in 0..self.midas.hesperides.len() {
+            self.open_tab(midas_index);
+        }
         //self.run_command("oracle mean-reversion 10");
         //self.run_command("oracle macd-crossover 12 26 9");
         //self.run_command("oracle macd-zero-cross 12 26 9");
@@ -168,15 +188,19 @@ impl App {
 
                 for event in self.midas.touch() {
                     match event {
-                        MidasEvent::KLineUpdate(token) => {
-                            self.update_graph(&token);
+                        MidasEvent::KLineUpdate(midas_index) => {
+                            self.update_graph(midas_index);
                         }
                         MidasEvent::BookUpdate(token) => {
-                            if let Some((curr_index, current_token)) = self.symbol_tabs.current() {
+                            if let Some((midas_index, current_token)) = self.symbol_tabs.current() {
                                 if current_token == token {
-                                    if let Some(data) = self.midas.get(&token) {
-                                        self.stock_views[curr_index].book_w.set_book(&data.book);
-                                        self.order_book_w.update_with(data.book.clone());
+                                    if let Some(book) = self.midas.get_book(&token) {
+                                        if let Some(graph_view) =
+                                            self.graph_views.get_mut(&midas_index)
+                                        {
+                                            graph_view.book_w.set_book(&book);
+                                        }
+                                        self.order_book_w.update_with(book);
                                     }
                                 }
                             }
@@ -189,7 +213,11 @@ impl App {
 
                 self.market_w.update_with(self.midas.ticks.clone());
 
-                self.strategy_w.update(&self.midas.hesperides);
+                self.strategy_w.update(
+                    &self.midas,
+                    &self.backtests,
+                    self.symbol_tabs.current_midas_index(),
+                );
             }
         }
         Ok(())
@@ -201,12 +229,12 @@ impl App {
         // |                   SYMBOLS                                         |
         // |-------------------------------------------------------------------|
         // |       |                                          |    WALLET      |   a
-        // | BOOK  |             CHART                        |----------------|
+        // |ORACLES|             CHART                        |----------------|
         // |       |                                          |    MARKET      |
         // |       |                                          |                |   b
         // |------ |                                          |----------------|
         // |       |                                          |                |
-        // |ORACLE |------------------------------------------|    LOG         |   c
+        // |BOOK   |------------------------------------------|    LOG         |   c
         // |       |            COMMAND                       |                |
         //  ------- -----------------------------------------------------------
 
@@ -238,24 +266,26 @@ impl App {
 
         let [l0_area, l1_area, l2_area] = layout_b_012.areas(b_area);
 
-        let [book_area, strategy_area] = layout_b_0_ab.areas(l0_area);
+        let [strategy_area, book_area] = layout_b_0_ab.areas(l0_area);
 
         let [chart_area, command_area] = layout_b_1_ab.areas(l1_area);
 
         let [wallet_area, market_area, log_area] = layout_b_2_abc.areas(l2_area);
 
         frame.render_widget(&self.symbol_tabs, symbol_tabs_area);
-        if let Some((curr_index, _)) = self.symbol_tabs.current() {
-            frame.render_widget(&self.stock_views[curr_index], chart_area);
+        if let Some((midas_index, _)) = self.symbol_tabs.current() {
+            if let Some(graph_view) = self.graph_views.get(&midas_index) {
+                frame.render_widget(graph_view, chart_area);
 
-            let legend_area = chart_area.clone();
-            let vertical = Layout::vertical([Constraint::Percentage(15)]).flex(Flex::Start);
-            let horizontal = Layout::horizontal([Constraint::Percentage(30)]).flex(Flex::End);
-            let [legend_area] = vertical.areas(legend_area);
-            let [legend_area] = horizontal.areas(legend_area);
+                let legend_area = chart_area.clone();
+                let vertical = Layout::vertical([Constraint::Percentage(15)]).flex(Flex::Start);
+                let horizontal = Layout::horizontal([Constraint::Percentage(30)]).flex(Flex::End);
+                let [legend_area] = vertical.areas(legend_area);
+                let [legend_area] = horizontal.areas(legend_area);
 
-            frame.render_widget(Clear, legend_area);
-            self.stock_views[curr_index].draw_legend(legend_area, frame.buffer_mut());
+                frame.render_widget(Clear, legend_area);
+                graph_view.draw_legend(legend_area, frame.buffer_mut());
+            }
         }
 
         frame.render_widget(&self.command_w, command_area);
@@ -292,11 +322,12 @@ impl App {
                     } else {
                         let mut event_consumed = false;
                         event_consumed &= self.symbol_tabs.handle_key_event(&key_event);
-                        if let Some((curr_index, _)) = self.symbol_tabs.current() {
-                            event_consumed &=
-                                self.stock_views[curr_index].handle_key_event(&key_event);
-                            if event_consumed {
-                                self.stock_views[curr_index].set_focus(true);
+                        if let Some((midas_index, _)) = self.symbol_tabs.current() {
+                            if let Some(graph_view) = self.graph_views.get_mut(&midas_index) {
+                                event_consumed &= graph_view.handle_key_event(&key_event);
+                                if event_consumed {
+                                    graph_view.set_focus(true);
+                                }
                             }
                         }
                         if !event_consumed {
@@ -350,11 +381,13 @@ impl App {
     }
 
     fn add_indicator(&mut self, words: &[&str]) {
-        if let Some((curr_index, _)) = self.symbol_tabs.current() {
-            match match_indicator_from_text(&words) {
-                Some(indicator) => self.stock_views[curr_index].add_indicator(&indicator),
-                None => (),
-            };
+        if let Some((midas_index, _)) = self.symbol_tabs.current() {
+            if let Some(graph_view) = self.graph_views.get_mut(&midas_index) {
+                match match_indicator_from_text(&words) {
+                    Some(indicator) => graph_view.add_indicator(&indicator),
+                    None => (),
+                };
+            }
         }
     }
 
@@ -364,7 +397,7 @@ impl App {
         //        for s in &mut self.strategy_w {
         //            s.add_oracle(&oracle);
         //        }
-        //        for w in &mut self.stock_views {
+        //        for w in &mut self.graph_views {
         //            w.add_oracle(&oracle);
         //        }
         //    }
@@ -373,11 +406,14 @@ impl App {
     }
 
     fn run_backtest(&mut self, _words: &[&str]) {
-        if let Some((curr_index, current_token)) = self.symbol_tabs.current() {
-            let bt = self
-                .midas
-                .run_backtest(&current_token, &self.stock_views[curr_index].time_window);
-            self.stock_views[curr_index].set_backtest(&bt);
+        if let Some((midas_index, _)) = self.symbol_tabs.current() {
+            if let Some(graph_view) = self.graph_views.get_mut(&midas_index) {
+                let bt = self
+                    .midas
+                    .run_backtest(midas_index, &graph_view.time_window);
+                graph_view.set_backtest(&bt);
+                self.backtests.insert(midas_index, bt.clone());
+            }
         }
     }
 

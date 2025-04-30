@@ -1,8 +1,28 @@
 use serde::{Deserialize, Serialize};
+use std::convert::From;
 use std::hash::Hash;
 
 use super::time::{Date, TimeUnit};
 use ta::{Close, High, Low, Open, Volume};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct F64 {
+    pub value: f64,
+}
+
+impl F64 {
+    pub fn new(value: f64) -> Self {
+        Self { value }
+    }
+}
+
+impl Eq for F64 {}
+
+impl From<f64> for F64 {
+    fn from(item: f64) -> Self {
+        Self { value: item }
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum DiError {

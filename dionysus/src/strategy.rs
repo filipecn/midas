@@ -6,7 +6,7 @@ use crate::{
     ERROR,
 };
 
-use serde::de::{Deserializer, MapAccess, Visitor};
+use serde::de::{Deserializer, Visitor};
 use serde::ser::{SerializeStruct, Serializer};
 use serde::{Deserialize, Serialize};
 use slog::slog_error;
@@ -36,8 +36,10 @@ impl Oracle {
             Oracle::Delphi => {
                 for counselor in counselors.iter() {
                     if let Ok(advice) = counselor.run(quote, history) {
-                        if advice.signal != Signal::None {
-                            return Ok(Decision { advice, pct: 1.0 });
+                        match advice.signal {
+                            Signal::Buy => return Ok(Decision { advice, pct: 0.6 }),
+                            Signal::Sell => return Ok(Decision { advice, pct: 1.0 }),
+                            _ => (),
                         }
                     }
                 }
@@ -63,6 +65,17 @@ pub struct Strategy {
 }
 
 impl Strategy {
+    pub fn required_history_size(&self) -> usize {
+        let mut ans: usize = 0;
+        for c in &self.counselors {
+            let r = c.required_samples();
+            if r > ans {
+                ans = r;
+            }
+        }
+        ans
+    }
+
     pub fn run(&self, quote: &Quote, history: &[Sample]) -> Result<Decision, DiError> {
         self.oracle.see(quote, history, &self.counselors)
     }
@@ -74,6 +87,7 @@ impl Strategy {
 
 #[derive(Clone)]
 pub struct Chrysus {
+    pub active: bool,
     pub token: Token,
     pub strategy: Strategy,
     pub capital: f64,
@@ -140,6 +154,7 @@ impl<'de> Deserialize<'de> for Chrysus {
 impl Chrysus {
     pub fn new(token: &Token) -> Self {
         Self {
+            active: false,
             token: token.clone(),
             strategy: Strategy::default(),
             capital: 0.0,
@@ -154,7 +169,7 @@ impl Chrysus {
     }
 
     pub fn name(&self) -> String {
-        format!("{} {}", self.token.to_string(), self.strategy.name())
+        format!("{} {}", self.token.name(), self.strategy.name())
     }
 
     fn print(&self) {

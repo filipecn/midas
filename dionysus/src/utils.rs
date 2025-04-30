@@ -22,9 +22,6 @@ macro_rules! TRACE {
 }
 
 pub fn compute_change_pct(start: f64, end: f64) -> f64 {
-    if start.total_cmp(&end) == Ordering::Greater {
-        start / end
-    } else {
-        -end / start
-    }
+    let frac = end / start;
+    (frac - 1.0) * 100.0
 }

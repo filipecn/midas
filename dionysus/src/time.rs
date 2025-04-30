@@ -110,6 +110,29 @@ impl TimeWindow {
     pub fn num_minutes(&self) -> i64 {
         self.num_seconds() / 60
     }
+    pub fn pretty_string(&self) -> String {
+        let mut txt = String::new();
+        let mut sec = self.num_seconds();
+        let days = sec / (24 * 60 * 100);
+        if days > 0 {
+            sec -= days * 24 * 60 * 100;
+            txt.push_str(format!("{:?}d", days).as_str());
+        }
+        let hours = sec / (60 * 100);
+        if hours > 0 {
+            sec -= hours * 60 * 100;
+            txt.push_str(format!("{:?}h", hours).as_str());
+        }
+        let min = sec / 100;
+        if min > 0 {
+            sec -= min * 100;
+            txt.push_str(format!("{:?}m", min).as_str());
+        }
+        if sec > 0 {
+            txt.push_str(format!("{:?}s", sec).as_str());
+        }
+        txt
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]

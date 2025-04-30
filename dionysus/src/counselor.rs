@@ -1,12 +1,9 @@
 use serde::{Deserialize, Serialize};
-use slog::slog_info;
-use slog_scope;
 
 use crate::{
-    finance::{DiError, OrderType, Quote, Sample, TimeInForce, Token},
-    indicators::{BollingerBandsAttributes, Indicator, IndicatorData},
+    finance::{DiError, OrderType, Quote, Sample, TimeInForce, Token, F64},
+    indicators::{Indicator, IndicatorData},
     time::Date,
-    INFO,
 };
 use std::cmp::Ordering;
 
@@ -116,29 +113,18 @@ pub struct Advice {
 pub enum Counselor {
     #[default]
     Trace,
-    MeanReversion(usize),
+    MeanReversion((usize, F64)),
     MACDCrossover((usize, usize, usize)),
     MACDZeroCross((usize, usize, usize)),
     EMACross((usize, usize)),
 }
 
-macro_rules! match_oracle {
-    ($func:ident, $words:expr) => {
-        if $words.len() == 2 {
-            match $words[1].parse::<usize>() {
-                Ok(n) => return Some(Counselor::$func(n)),
-                Err(_) => (),
-            }
-        } else {
-            INFO!("{:?}: arguments not found!", $words);
-        }
-    };
-}
-
 pub fn match_oracle_from_text(words: &[&str]) -> Option<Counselor> {
     match words[0].to_uppercase().as_str() {
         "MEAN-REVERSION" => {
-            match_oracle!(MeanReversion, words)
+            if let (Ok(n), Ok(w)) = (words[1].parse::<usize>(), words[2].parse::<f64>()) {
+                return Some(Counselor::MeanReversion((n, w.into())));
+            }
         }
         "MACD-CROSSOVER" => {
             if let (Ok(fp), Ok(sp), Ok(ss)) = (
@@ -173,7 +159,7 @@ impl Counselor {
     pub fn required_samples(&self) -> usize {
         match self {
             Counselor::Trace => 0,
-            Counselor::MeanReversion(n) => *n,
+            Counselor::MeanReversion((n, _)) => *n,
             Counselor::MACDCrossover((_, sp, _)) => *sp,
             Counselor::MACDZeroCross((_, sp, _)) => *sp,
             Counselor::EMACross((_, sp)) => *sp,
@@ -182,7 +168,7 @@ impl Counselor {
     pub fn run(&self, quote: &Quote, history: &[Sample]) -> Result<Advice, DiError> {
         match self {
             Counselor::Trace => run_trace(quote),
-            Counselor::MeanReversion(n) => run_mean_reversion(*n, quote, history),
+            Counselor::MeanReversion((n, w)) => run_mean_reversion(*n, w.value, quote, history),
             Counselor::MACDCrossover((fp, sp, ss)) => {
                 run_macd_crossover(*fp, *sp, *ss, quote, history)
             }
@@ -213,11 +199,8 @@ impl Counselor {
     }
     pub fn indicators(&self) -> Vec<Indicator> {
         match self {
-            Counselor::MeanReversion(n) => {
-                vec![Indicator::BollingerBands(BollingerBandsAttributes {
-                    n: *n,
-                    w: 2.0,
-                })]
+            Counselor::MeanReversion((n, w)) => {
+                vec![Indicator::BollingerBands((*n, w.clone()))]
             }
             Counselor::MACDCrossover((fp, sp, ss)) => {
                 vec![Indicator::MovingAverageConvergenceDivergence((
@@ -261,8 +244,13 @@ fn run_trace(quote: &Quote) -> Result<Advice, DiError> {
     Ok(advice)
 }
 
-fn run_mean_reversion(n: usize, quote: &Quote, history: &[Sample]) -> Result<Advice, DiError> {
-    let bband_i = Indicator::BollingerBands(BollingerBandsAttributes { n, w: 2.0 });
+fn run_mean_reversion(
+    n: usize,
+    w: f64,
+    quote: &Quote,
+    history: &[Sample],
+) -> Result<Advice, DiError> {
+    let bband_i = Indicator::BollingerBands((n, w.into()));
 
     let upper: f64;
     let lower: f64;

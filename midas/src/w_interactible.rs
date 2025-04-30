@@ -1,4 +1,4 @@
-use crate::{w_command::CommandInput, w_graph::StockGraph, w_symbol_tabs::SymbolTabs};
+use crate::{w_command::CommandInput, w_graph::GraphView, w_symbol_tabs::SymbolTabs};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 pub trait Interactible {
@@ -6,7 +6,7 @@ pub trait Interactible {
     fn set_focus(&mut self, focus: bool);
 }
 
-impl Interactible for StockGraph {
+impl Interactible for GraphView {
     fn handle_key_event(&mut self, key_event: &KeyEvent) -> bool {
         let mut consumed = true;
         if key_event.kind == KeyEventKind::Press {
@@ -15,9 +15,6 @@ impl Interactible for StockGraph {
                 _ => self.zooming = false,
             };
             match key_event.code {
-                KeyCode::Char('i') => {
-                    self.selected_strategy = (self.selected_strategy + 1) % self.strategies.len();
-                }
                 KeyCode::Left => {
                     if self.zooming {
                         self.zoom(-0.05, 0.0);
@@ -81,6 +78,13 @@ impl Interactible for SymbolTabs {
         let mut consumed = true;
         if key_event.kind == KeyEventKind::Press {
             match key_event.code {
+                KeyCode::Char('o') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                    if key_event.modifiers.contains(KeyModifiers::SHIFT) {
+                        self.previous_item();
+                    } else {
+                        self.next_item();
+                    }
+                }
                 KeyCode::Char('t') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
                     if key_event.modifiers.contains(KeyModifiers::SHIFT) {
                         self.previous();

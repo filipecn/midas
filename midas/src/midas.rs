@@ -1,11 +1,12 @@
 use slog::slog_error;
 use std::collections::HashMap;
+use std::fs::File;
 
 use dionysus::{
     backtest::{backtest, Backtest},
     binance::BinanceMarket,
     counselor::Counselor,
-    finance::{MarketEvent, MarketTick, Order, Sample, Token},
+    finance::{Book, MarketEvent, MarketTick, Order, Sample, Token},
     historical_data::HistoricalData,
     strategy::{Chrysus, Strategy},
     time::TimeWindow,
@@ -13,18 +14,17 @@ use dionysus::{
     ERROR,
 };
 
-use std::fs::File;
-
 pub enum MidasEvent {
     BookUpdate(Token),
-    KLineUpdate(Token),
+    KLineUpdate(usize),
 }
 
 pub struct Midas {
     pub wallet: BinanceWallet,
     pub market: BinanceMarket,
-    pub hesperides: HashMap<Token, Chrysus>,
+    pub hesperides: Vec<Chrysus>,
     pub ticks: HashMap<Token, MarketTick>,
+    pub books: HashMap<Token, Book>,
     balance: HashMap<Token, f64>,
 }
 
@@ -33,13 +33,15 @@ impl Midas {
         Self {
             wallet: BinanceWallet::new(&keys_file, use_test_api),
             market: BinanceMarket::new(use_test_api),
-            hesperides: HashMap::new(),
+            hesperides: Vec::new(),
             ticks: HashMap::new(),
+            books: HashMap::new(),
             balance: HashMap::new(),
         }
     }
 
-    pub fn init(&mut self) {
+    pub fn init(&mut self, state_file: &String) {
+        self.load_state(state_file);
         self.market.day_ticker_all_service("USDT");
         self.balance = HashMap::new();
         match self.wallet.get_balance() {
@@ -53,94 +55,81 @@ impl Midas {
     }
 
     pub fn save_state(&self, filename: &String) {
-        let mut cs: Vec<Chrysus> = Vec::new();
-        for (_, c) in &self.hesperides {
-            cs.push(c.clone());
-        }
         let file = File::create(filename.as_str()).unwrap();
-        if let Err(e) = serde_json::to_writer_pretty(file, &cs) {
+        if let Err(e) = serde_json::to_writer_pretty(file, &self.hesperides) {
             ERROR!("{:?}", e);
         }
     }
 
-    fn init_token(&mut self, token: &Token) {
-        if let Some(chrysus) = self.hesperides.get(token) {
-            if chrysus.token.is_pair() {
-                match self
-                    .market
-                    .fetch_last(&chrysus.token, &chrysus.strategy.duration)
-                {
-                    Ok(samples) => {
-                        // compute strategy performance
-                        backtest(&chrysus, samples);
-                    }
-                    Err(e) => {
-                        let t = chrysus.token.clone();
-                        ERROR!("ERROR {:?} {:?}.", e, t);
-                        return;
-                    }
-                }
-                self.market
-                    .kline_service(&chrysus.token, &chrysus.strategy.duration.resolution);
-                self.market.order_book_service(&chrysus.token);
-            }
+    pub fn load_state(&mut self, filename: &String) {
+        let data = std::fs::read_to_string(filename).expect("Unable to read file");
+        self.hesperides = serde_json::from_str(&data).expect("Unable to parse");
+        for i in 0..self.hesperides.len() {
+            self.init_token(i);
         }
     }
 
-    pub fn add_token(&mut self, token: &Token) -> bool {
-        if self.hesperides.contains_key(&token) {
-            ERROR!("Midas already touched {:?}.", token);
-            return false;
+    fn init_token(&mut self, index: usize) {
+        let chrysus = &self.hesperides[index];
+        if chrysus.token.is_pair() {
+            match self
+                .market
+                .fetch_last(&chrysus.token, &chrysus.strategy.duration)
+            {
+                Ok(_samples) => {
+                    // compute strategy performance
+                    //backtest(&chrysus, samples);
+                }
+                Err(e) => {
+                    let t = chrysus.token.clone();
+                    ERROR!("ERROR {:?} {:?}.", e, t);
+                    return;
+                }
+            }
+            self.market
+                .kline_service(&chrysus.token, &chrysus.strategy.duration.resolution);
+            self.market.order_book_service(&chrysus.token);
         }
-        self.hesperides.insert(token.clone(), Chrysus::new(token));
+    }
+
+    pub fn add_token(&mut self, token: &Token) -> Option<usize> {
+        let index = self.hesperides.len();
+        self.hesperides.push(Chrysus::new(token));
         let mut strategy = Strategy::default();
+        strategy
+            .counselors
+            .push(Counselor::MeanReversion((20, 2.0.into())));
         strategy.duration.count = 200;
-        self.set_strategy(token, &strategy);
-
-        return self.is_token_ok(token);
+        self.set_strategy(index, &strategy);
+        Some(index)
     }
 
-    pub fn run_backtest(&mut self, token: &Token, period: &TimeWindow) -> Backtest {
-        if let Some(t) = self.hesperides.get_mut(token) {
-            match self.market.get_last(token, &period) {
-                Ok(samples) => {
-                    return backtest(&t, samples);
-                }
-                Err(e) => ERROR!("{:?}", e),
+    pub fn run_backtest(&mut self, index: usize, period: &TimeWindow) -> Backtest {
+        match self.market.get_last(&self.hesperides[index].token, &period) {
+            Ok(samples) => {
+                return backtest(&self.hesperides[index], samples);
             }
+            Err(e) => ERROR!("{:?}", e),
         }
         Backtest::default()
     }
 
-    pub fn get_history(&self, token: &Token) -> Option<&[Sample]> {
-        if let Some(t) = self.hesperides.get(token) {
-            match self.market.get_last(token, &t.strategy.duration) {
-                Ok(samples) => return Some(samples),
-                Err(e) => ERROR!("{:?}", e),
-            }
+    pub fn get_history(&self, index: usize) -> Option<&[Sample]> {
+        let t = &self.hesperides[index];
+        match self.market.get_last(&t.token, &t.strategy.duration) {
+            Ok(samples) => return Some(samples),
+            Err(e) => ERROR!("{:?}", e),
         }
         None
     }
 
-    pub fn is_token_ok(&self, token: &Token) -> bool {
-        if self.hesperides.contains_key(&token) {
-            // TODO
-            true
-        } else {
-            false
-        }
+    pub fn set_strategy(&mut self, index: usize, strategy: &Strategy) {
+        self.hesperides[index].strategy = strategy.clone();
+        self.init_token(index);
     }
 
-    pub fn set_strategy(&mut self, token: &Token, strategy: &Strategy) {
-        if let Some(t) = self.hesperides.get_mut(token) {
-            t.strategy = strategy.clone();
-            t.strategy.counselors.push(Counselor::MeanReversion(20));
-            self.init_token(&token);
-        }
-    }
-
-    pub fn get(&self, token: &Token) -> Option<&Chrysus> {
-        self.hesperides.get(token)
+    pub fn get(&self, index: usize) -> Option<&Chrysus> {
+        Some(&self.hesperides[index])
     }
 
     pub fn get_balance(&self) -> HashMap<Token, f64> {
@@ -157,17 +146,27 @@ impl Midas {
         }
     }
 
+    pub fn get_book(&self, token: &Token) -> Option<Book> {
+        if let Some(book) = self.books.get(&token) {
+            Some(book.clone())
+        } else {
+            None
+        }
+    }
+
     pub fn touch(&mut self) -> Vec<MidasEvent> {
         let mut events: Vec<MidasEvent> = Vec::new();
         for event in self.market.get_events() {
             match event {
                 MarketEvent::KLine((token, sample)) => {
-                    if let Some(t) = self.hesperides.get(&token) {
-                        if let Err(e) = self.market.append(&token, &sample) {
-                            ERROR!("{:?}", e);
-                        } else {
-                            if sample.resolution == t.strategy.duration.resolution {
-                                events.push(MidasEvent::KLineUpdate(token));
+                    for (index, t) in self.hesperides.iter().enumerate() {
+                        if t.token == token {
+                            if let Err(e) = self.market.append(&t.token, &sample) {
+                                ERROR!("{:?}", e);
+                            } else {
+                                if sample.resolution == t.strategy.duration.resolution {
+                                    events.push(MidasEvent::KLineUpdate(index));
+                                }
                             }
                         }
                     }
@@ -175,11 +174,15 @@ impl Midas {
                 MarketEvent::Ticks(ticks) => self.update_ticks(ticks),
                 MarketEvent::OrderBook(book) => {
                     let token = book.token.clone();
-                    if let Some(_t) = &mut self.hesperides.get_mut(&token) {
-                        //let orders = t.decide(book, &self.market);
-                        //_submit(orders);
-                        events.push(MidasEvent::BookUpdate(token));
-                    }
+                    self.books.insert(token.clone(), book);
+                    events.push(MidasEvent::BookUpdate(token));
+                    //for t in &self.hesperides {
+                    //    if t.token == token {
+                    //let orders = t.decide(book, &self.market);
+                    //_submit(orders);
+                    //        break;
+                    //    }
+                    // }
                 }
             };
         }

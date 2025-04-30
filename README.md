@@ -1,10 +1,12 @@
 # midas
 
-[ ] integrate midas into app
+[ ] each tab may have 0 oracles
+
+[ ] tabs are unique pairs that point to multiple oracles
+
+[ ] cycle between oracles inside a tab (draw)
 
 [ ] create order
-
-[ ] backtest
 
 ---
 
@@ -20,3 +22,6 @@
 
 [x] vis quote
 
+[x] backtest
+
+[x] integrate midas into app
