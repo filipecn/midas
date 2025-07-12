@@ -1,11 +1,10 @@
-use dionysus::{finance::Token, ERROR};
+use dionysus::finance::Token;
 use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{palette::tailwind, Color},
     widgets::{Tabs, Widget},
 };
-use slog::slog_error;
 use std::iter::Iterator;
 
 struct TabItem {
@@ -122,25 +121,7 @@ impl SymbolTabs {
         }
     }
 
-    pub fn tab_count(&self) -> usize {
-        self.tabs.len()
-    }
-
-    pub fn tab(&self, i: usize) -> Option<(usize, Token)> {
-        if i < self.tabs.len() {
-            if self.tabs[i].midas_indices.len() > self.tabs[i].selected_index {
-                return Some((
-                    self.tabs[i].midas_indices[self.tabs[i].selected_index],
-                    self.tabs[i].token.clone(),
-                ));
-            }
-        }
-        None
-    }
-}
-
-impl Widget for &SymbolTabs {
-    fn render(self, area: Rect, buf: &mut Buffer) {
+    pub fn draw(&self, area: Rect, buf: &mut Buffer) {
         if self.tabs.is_empty() {
             return;
         }

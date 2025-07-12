@@ -7,7 +7,6 @@ use ratatui::{
 
 #[derive(Default)]
 pub struct CommandInput {
-    pub focus: bool,
     /// Current value of the input box
     input: String,
     /// Position of cursor in the editor area.
@@ -84,13 +83,10 @@ impl CommandInput {
     fn reset_cursor(&mut self) {
         self.character_index = 0;
     }
-}
 
-impl Widget for &CommandInput {
-    fn render(self, area: Rect, buf: &mut Buffer) {
+    pub fn draw(&self, area: Rect, buf: &mut Buffer, focus: bool) {
         let input = Paragraph::new(self.input.as_str())
-            .style(common::focus_style(self.focus))
-            .block(common::block("COMMAND"));
+            .block(common::block("COMMAND").border_style(common::focus_style(focus)));
         input.render(area, buf);
     }
 }

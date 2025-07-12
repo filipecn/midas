@@ -4,7 +4,9 @@ use crate::{
     finance::{DiError, OrderType, Quote, Sample, TimeInForce, Token, F64},
     indicators::{Indicator, IndicatorData},
     time::Date,
+    INFO,
 };
+use slog::slog_info;
 use std::cmp::Ordering;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -117,6 +119,8 @@ pub enum Counselor {
     MACDCrossover((usize, usize, usize)),
     MACDZeroCross((usize, usize, usize)),
     EMACross((usize, usize)),
+    RSI((usize, F64)),
+    Tyche(usize),
 }
 
 pub fn match_oracle_from_text(words: &[&str]) -> Option<Counselor> {
@@ -149,6 +153,16 @@ pub fn match_oracle_from_text(words: &[&str]) -> Option<Counselor> {
                 return Some(Counselor::EMACross((fp, sp)));
             }
         }
+        "RSI" => {
+            if let (Ok(n), Ok(w)) = (words[1].parse::<usize>(), words[2].parse::<f64>()) {
+                return Some(Counselor::RSI((n, w.into())));
+            }
+        }
+        "TYCHE" => {
+            if let Ok(n) = words[1].parse::<usize>() {
+                return Some(Counselor::Tyche(n));
+            }
+        }
         "TRACE" => return Some(Counselor::Trace),
         _ => (),
     };
@@ -163,6 +177,8 @@ impl Counselor {
             Counselor::MACDCrossover((_, sp, _)) => *sp,
             Counselor::MACDZeroCross((_, sp, _)) => *sp,
             Counselor::EMACross((_, sp)) => *sp,
+            Counselor::RSI((n, _)) => *n,
+            Counselor::Tyche(n) => *n,
         }
     }
     pub fn run(&self, quote: &Quote, history: &[Sample]) -> Result<Advice, DiError> {
@@ -176,6 +192,8 @@ impl Counselor {
                 run_macd_zero_cross(*fp, *sp, *ss, quote, history)
             }
             Counselor::EMACross((fp, sp)) => run_ema_cross(*fp, *sp, quote, history),
+            Counselor::RSI((n, w)) => run_rsi(*n, w.value, quote, history),
+            Counselor::Tyche(n) => run_tyche(*n, quote, history),
         }
     }
     pub fn run_series(&self, samples: &[Sample]) -> Result<Vec<Advice>, DiError> {
@@ -218,13 +236,19 @@ impl Counselor {
                     Indicator::ExponentialMovingAverage(*sp),
                 ]
             }
+            Counselor::RSI((n, _)) => {
+                vec![Indicator::RelativeStrengthIndex(*n)]
+            }
+            Counselor::Tyche(n) => {
+                vec![Indicator::ExponentialMovingAverage(*n)]
+            }
             _ => Vec::new(),
         }
     }
     pub fn name(&self) -> String {
         match &self {
             Counselor::Trace => format!("trace"),
-            Counselor::MeanReversion(n) => format!("mean-reversion({:?})", n),
+            Counselor::MeanReversion((n, w)) => format!("mean-reversion({:?}, {:?})", n, w),
             Counselor::MACDCrossover((fp, sp, ss)) => {
                 format!("macd-crossover({}, {}, {})", fp, sp, ss)
             }
@@ -234,6 +258,8 @@ impl Counselor {
             Counselor::EMACross((fp, sp)) => {
                 format!("ema-cross({}, {})", fp, sp)
             }
+            Counselor::RSI((n, w)) => format!("rsi({:?}, {:?})", n, w),
+            Counselor::Tyche(n) => format!("tyche({})", n),
         }
     }
 }
@@ -397,6 +423,51 @@ fn run_ema_cross(
         }
         _ => (),
     }
+
+    Ok(advice)
+}
+
+fn run_rsi(n: usize, w: f64, quote: &Quote, history: &[Sample]) -> Result<Advice, DiError> {
+    let mut advice = Advice::default();
+
+    let last_sample = history.last().unwrap();
+
+    let rsi_i = Indicator::RelativeStrengthIndex(n);
+    match rsi_i.compute(history) {
+        Ok(IndicatorData::Scalar(r)) => {
+            if r / 100.0 > 1.0 - w {
+                advice.signal = Signal::Sell;
+                advice.stop_price = if let Some(p) = quote.bid {
+                    p
+                } else {
+                    last_sample.close
+                };
+            } else if r / 100.0 < w {
+                advice.signal = Signal::Buy;
+                advice.stop_price = if let Some(p) = quote.ask {
+                    p
+                } else {
+                    last_sample.close
+                };
+            }
+        }
+        Ok(_) => return Err(DiError::Error),
+        Err(e) => return Err(e),
+    };
+    Ok(advice)
+}
+
+fn run_tyche(n: usize, quote: &Quote, history: &[Sample]) -> Result<Advice, DiError> {
+    let advice = Advice::default();
+    let mean_reversion_advice;
+    match run_mean_reversion(n, 2.0, quote, history) {
+        Ok(a) => mean_reversion_advice = a,
+        Err(e) => return Err(e),
+    }
+    if mean_reversion_advice.signal == Signal::None {
+        return Ok(advice);
+    }
+    let rsi_signal = run_rsi(n, 0.2, quote, history);
 
     Ok(advice)
 }

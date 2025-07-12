@@ -1,22 +1,20 @@
-use std::cmp::Ordering;
-
 #[macro_export]
 macro_rules! INFO {
-    ( $($args:tt),* ) => {
+    ( $($args:expr),* ) => {
         slog_info!(slog_scope::logger(),$($args),*);
     };
 }
 
 #[macro_export]
 macro_rules! ERROR {
-    ( $f:tt, $($args:ident),* ) => {
-        slog_error!(slog_scope::logger(),$f,$($args),*);
+    ( $($args:expr),* ) => {
+        slog_error!(slog_scope::logger(),$($args),*);
     };
 }
 
 #[macro_export]
 macro_rules! TRACE {
-    ( $($args:tt),* ) => {
+    ( $($args:expr),* ) => {
         slog_trace!(slog_scope::logger(),$($args),*);
     };
 }

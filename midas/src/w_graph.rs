@@ -17,7 +17,9 @@ use dionysus::{
     indicators::{Indicator, IndicatorSource},
     strategy::Strategy,
     time::TimeWindow,
+    INFO,
 };
+use slog::slog_info;
 
 pub struct GraphView {
     pub book_w: BookGraph,
@@ -126,10 +128,8 @@ impl GraphView {
             .block(Block::bordered().title("Indicators"))
             .render(area, buf);
     }
-}
 
-impl Widget for &GraphView {
-    fn render(self, area: Rect, buf: &mut Buffer) {
+    pub fn draw(&self, area: Rect, buf: &mut Buffer) {
         let layout = Layout::vertical([Constraint::Percentage(80), Constraint::Percentage(20)]);
         let [candle_area, volume_area] = layout.areas(area);
         let mut title: String = String::from("Chart ");

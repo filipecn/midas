@@ -1,11 +1,10 @@
 use ratatui::{
     layout::{Constraint, Flex, Layout, Rect},
     style::{
-        palette::tailwind::{BLUE, GREEN, RED, SLATE},
+        palette::tailwind::{BLUE, GREEN, RED, SLATE, YELLOW},
         Color, Modifier, Style, Stylize,
     },
-    text,
-    text::Line,
+    text::{self, Line},
     widgets::{
         Block, BorderType, Borders, HighlightSpacing, List, ListItem, ListState, StatefulWidget,
     },
@@ -19,6 +18,8 @@ pub const _NORMAL_HEADER_STYLE: Style = Style::new().fg(SLATE.c100).bg(BLUE.c800
 pub const SELECTED_STYLE: Style = Style::new().bg(SLATE.c800).add_modifier(Modifier::BOLD);
 pub const PROFIT_COLOR: Color = GREEN.c500;
 pub const LOSS_COLOR: Color = RED.c500;
+pub const WINDOW_BORDER: Color = RED.c50;
+pub const SELECTED_WINDOW_BORDER: Color = YELLOW.c50;
 
 pub fn color_from_signal(signal: &Signal) -> Color {
     match signal {
@@ -41,9 +42,9 @@ pub fn block(title: &str) -> Block {
         .title(text::Line::raw(title)) //.centered())
         .borders(Borders::ALL)
         .border_type(BorderType::Thick)
-        //.border_set(symbols::border::EMPTY)
-        //.border_style(NORMAL_HEADER_STYLE)
-        .bg(NORMAL_BG)
+    //.border_set(symbols::border::EMPTY)
+    //.border_style(NORMAL_HEADER_STYLE)
+    //.bg(NORMAL_BG)
     //Block::bordered().title(text::Line::from(title).cyan().bold().centered())
 }
 

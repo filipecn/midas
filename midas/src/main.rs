@@ -1,21 +1,23 @@
 use clap::Parser;
 use color_eyre::Result;
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{self, Event};
 use dionysus::backtest::Backtest;
 use dionysus::finance::Token;
 use dionysus::historical_data::HistoricalData;
 use dionysus::indicators::match_indicator_from_text;
+use dionysus::strategy::Strategy;
 use dionysus::time::TimeUnit;
 use dionysus::ERROR;
 use ratatui::{
-    layout::{Constraint, Flex, Layout, Position},
-    widgets::Clear,
+    layout::{Constraint, Layout},
     DefaultTerminal, Frame,
 };
 use slog::slog_error;
 use slog_scope;
 use std::collections::HashMap;
 use std::io;
+use w_window::WindowType;
+use w_window_manager::WindowManager;
 
 mod common;
 mod g_book;
@@ -26,50 +28,30 @@ mod g_indicators;
 mod g_samples;
 mod g_strategy;
 mod midas;
+mod w_backtest;
 mod w_command;
 mod w_graph;
 mod w_interactible;
 mod w_log;
 mod w_market;
+mod w_oracle;
 mod w_order_book;
 mod w_strategy;
 mod w_symbol_tabs;
 mod w_wallet;
+mod w_window;
+mod w_window_manager;
 
-use common::popup_area;
 use midas::{Midas, MidasEvent};
-use w_command::CommandInput;
 use w_graph::GraphView;
-use w_interactible::Interactible;
-use w_log::LogWindow;
-use w_market::MarketWindow;
-use w_order_book::OrderBookWindow;
-use w_strategy::StrategyWindow;
-use w_symbol_tabs::SymbolTabs;
-use w_wallet::WalletWindow;
-
-#[derive(Default, Eq, PartialEq)]
-enum InputMode {
-    #[default]
-    Normal,
-    Command,
-}
+use w_interactible::InteractionEvent;
 
 pub struct App {
     midas: Midas,
     exit: bool,
-    graph_views: HashMap<usize, GraphView>,
-    symbol_tabs: SymbolTabs,
-    command_w: CommandInput,
-    input_mode: InputMode,
-    wallet_w: WalletWindow,
-    market_w: MarketWindow,
-    order_book_w: OrderBookWindow,
-    log_w: LogWindow,
-    strategy_w: StrategyWindow,
-    show_log: bool,
     state_file: String,
     backtests: HashMap<usize, Backtest>,
+    window_manager: WindowManager,
 }
 
 impl App {
@@ -77,18 +59,9 @@ impl App {
         App {
             midas: Midas::new(keys_file, use_test_api),
             exit: false,
-            graph_views: HashMap::new(),
-            symbol_tabs: SymbolTabs::default(),
-            command_w: CommandInput::default(),
-            input_mode: InputMode::default(),
-            wallet_w: WalletWindow::default(),
-            market_w: MarketWindow::default(),
-            order_book_w: OrderBookWindow::default(),
-            log_w: LogWindow::default(),
-            strategy_w: StrategyWindow::default(),
-            show_log: false,
             state_file: String::from("state.json"),
             backtests: HashMap::new(),
+            window_manager: WindowManager::new(),
         }
     }
 
@@ -100,8 +73,9 @@ impl App {
                     graph.set_strategy(&c.strategy);
                     graph.set_data(samples);
                     graph.reset_camera();
-                    self.graph_views.insert(midas_index, graph);
-                    self.symbol_tabs.add(&c.token, midas_index);
+                    self.window_manager.tabs().add(&c.token, midas_index);
+                    self.window_manager.open_chart(midas_index, graph);
+                    self.run_backtest();
                 }
             }
         }
@@ -119,12 +93,15 @@ impl App {
     }
 
     fn set_history_size(&mut self, n: usize) {
-        if let Some((midas_index, pair)) = self.symbol_tabs.current() {
-            if let Some(graph_view) = self.graph_views.get_mut(&midas_index) {
+        if let Some((midas_index, pair)) = self.window_manager.tabs().current() {
+            if let Some(graph_view) = self.window_manager.chart(midas_index) {
                 let mut time_window = graph_view.time_window.clone();
                 time_window.count = n as i64;
                 match self.midas.market.fetch_last(&pair, &time_window) {
-                    Ok(samples) => graph_view.set_data(samples),
+                    Ok(samples) => {
+                        graph_view.set_data(samples);
+                        self.run_backtest();
+                    }
                     Err(e) => ERROR!("{:?}", e),
                 }
             }
@@ -132,14 +109,17 @@ impl App {
     }
 
     fn set_resolution(&mut self, resolution_name: &str) {
-        if let Some((midas_index, curr_token)) = self.symbol_tabs.current() {
+        if let Some((midas_index, curr_token)) = self.window_manager.tabs().current() {
             if let Some(c) = self.midas.get(midas_index) {
                 let mut s = c.strategy.clone();
                 s.duration.resolution = TimeUnit::from_name(resolution_name);
                 self.midas.set_strategy(midas_index, &s);
-                if let Some(graph_view) = self.graph_views.get_mut(&midas_index) {
+                if let Some(graph_view) = self.window_manager.chart(midas_index) {
                     match self.midas.market.get_last(&curr_token, &s.duration) {
-                        Ok(samples) => graph_view.set_data(samples),
+                        Ok(samples) => {
+                            graph_view.set_data(samples);
+                            self.run_backtest();
+                        }
                         Err(e) => ERROR!("{:?}", e),
                     }
                 }
@@ -147,18 +127,39 @@ impl App {
         }
     }
 
-    fn update_graph(&mut self, midas_index: usize) {
-        if let Some((index, curr_token)) = self.symbol_tabs.current() {
-            if index == midas_index {
-                if let Some(graph_view) = self.graph_views.get_mut(&midas_index) {
-                    let time_window = graph_view.time_window.clone();
-                    match self.midas.market.get_last(&curr_token, &time_window) {
-                        Ok(samples) => {
-                            graph_view.set_data(samples);
-                        }
-                        Err(e) => ERROR!("{:?}", e),
-                    };
+    fn update_strategy(&mut self, strategy: &Strategy) {
+        if let Some((midas_index, token)) = self.window_manager.tabs().current() {
+            self.midas.set_strategy(midas_index, strategy);
+            if let Some(graph_view) = self.window_manager.chart(midas_index) {
+                match self.midas.market.get_last(&token, &strategy.duration) {
+                    Ok(samples) => {
+                        graph_view.set_data(samples);
+                        self.run_backtest();
+                    }
+                    Err(e) => ERROR!("{:?}", e),
                 }
+            }
+        }
+    }
+
+    fn open_oracle(&mut self) {
+        if let Some(midas_index) = self.window_manager.tabs().current_midas_index() {
+            if let Some(c) = self.midas.get(midas_index) {
+                self.window_manager.open_oracle(&c.strategy);
+            }
+        }
+    }
+
+    fn update_graph(&mut self, midas_index: usize) {
+        if let Some(token) = self.midas.get_token(midas_index) {
+            if let Some(graph_view) = self.window_manager.chart(midas_index) {
+                let time_window = graph_view.time_window.clone();
+                match self.midas.market.get_last(&token, &time_window) {
+                    Ok(samples) => {
+                        graph_view.set_data(samples);
+                    }
+                    Err(e) => ERROR!("{:?}", e),
+                };
             }
         }
     }
@@ -192,15 +193,17 @@ impl App {
                             self.update_graph(midas_index);
                         }
                         MidasEvent::BookUpdate(token) => {
-                            if let Some((midas_index, current_token)) = self.symbol_tabs.current() {
+                            if let Some((midas_index, current_token)) =
+                                self.window_manager.tabs().current()
+                            {
                                 if current_token == token {
                                     if let Some(book) = self.midas.get_book(&token) {
                                         if let Some(graph_view) =
-                                            self.graph_views.get_mut(&midas_index)
+                                            self.window_manager.chart(midas_index)
                                         {
                                             graph_view.book_w.set_book(&book);
                                         }
-                                        self.order_book_w.update_with(book);
+                                        self.window_manager.book().update_with(book);
                                     }
                                 }
                             }
@@ -208,16 +211,18 @@ impl App {
                     };
                 }
 
-                self.wallet_w
+                self.window_manager
+                    .wallet()
                     .update(self.midas.get_balance(), &self.midas.ticks);
 
-                self.market_w.update_with(self.midas.ticks.clone());
+                self.window_manager
+                    .market()
+                    .update_with(self.midas.ticks.clone());
 
-                self.strategy_w.update(
-                    &self.midas,
-                    &self.backtests,
-                    self.symbol_tabs.current_midas_index(),
-                );
+                let midas_index = self.window_manager.tabs().current_midas_index();
+                self.window_manager
+                    .strategy()
+                    .update(&self.midas, &self.backtests, midas_index);
             }
         }
         Ok(())
@@ -250,7 +255,7 @@ impl App {
 
         // a-book b-oracle
         let layout_b_0_ab =
-            Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)]);
+            Layout::vertical([Constraint::Percentage(75), Constraint::Percentage(25)]);
 
         // a-chart b-command
         let layout_b_1_ab = Layout::vertical([Constraint::Min(0), Constraint::Length(4)]);
@@ -272,89 +277,45 @@ impl App {
 
         let [wallet_area, market_area, log_area] = layout_b_2_abc.areas(l2_area);
 
-        frame.render_widget(&self.symbol_tabs, symbol_tabs_area);
-        if let Some((midas_index, _)) = self.symbol_tabs.current() {
-            if let Some(graph_view) = self.graph_views.get(&midas_index) {
-                frame.render_widget(graph_view, chart_area);
+        self.window_manager.set_area(WindowType::LOG, log_area);
+        self.window_manager.set_area(WindowType::CHART, chart_area);
+        self.window_manager
+            .set_area(WindowType::INPUT, command_area);
+        self.window_manager
+            .set_area(WindowType::ORDERBOOK, book_area);
+        self.window_manager
+            .set_area(WindowType::TABS, symbol_tabs_area);
+        self.window_manager
+            .set_area(WindowType::STRATEGY, strategy_area);
+        self.window_manager
+            .set_area(WindowType::MARKET, market_area);
+        self.window_manager
+            .set_area(WindowType::WALLET, wallet_area);
 
-                let legend_area = chart_area.clone();
-                let vertical = Layout::vertical([Constraint::Percentage(15)]).flex(Flex::Start);
-                let horizontal = Layout::horizontal([Constraint::Percentage(30)]).flex(Flex::End);
-                let [legend_area] = vertical.areas(legend_area);
-                let [legend_area] = horizontal.areas(legend_area);
+        let midas_index = self.window_manager.tabs().current_midas_index().unwrap();
+        self.window_manager.select_chart(midas_index);
 
-                frame.render_widget(Clear, legend_area);
-                graph_view.draw_legend(legend_area, frame.buffer_mut());
-            }
-        }
-
-        frame.render_widget(&self.command_w, command_area);
-        frame.set_cursor_position(Position::new(
-            // Draw the cursor at the current position in the input field.
-            // This position is can be controlled via the left and right arrow key
-            command_area.x + self.command_w.cursor_position() + 1,
-            // Move one line down, from the border to the input line
-            command_area.y + 1,
-        ));
-        self.wallet_w.render(wallet_area, frame.buffer_mut());
-        self.market_w.render(market_area, frame.buffer_mut());
-
-        self.strategy_w.render(strategy_area, frame.buffer_mut());
-
-        self.order_book_w.render(book_area, frame.buffer_mut());
-
-        if self.show_log {
-            let area = popup_area(frame.area().clone(), 60, 80);
-            frame.render_widget(Clear, area); //this clears out the background
-            frame.render_widget(&self.log_w, area);
-        } else {
-            frame.render_widget(&self.log_w, log_area);
-        }
+        self.window_manager.render(frame);
     }
 
     fn handle_events(&mut self) -> io::Result<()> {
         match event::read()? {
-            Event::Key(key_event) => match self.input_mode {
-                InputMode::Normal => {
-                    if key_event.code == KeyCode::Char('a') {
-                        self.input_mode = InputMode::Command;
-                        self.command_w.set_focus(true);
-                    } else {
-                        let mut event_consumed = false;
-                        event_consumed &= self.symbol_tabs.handle_key_event(&key_event);
-                        if let Some((midas_index, _)) = self.symbol_tabs.current() {
-                            if let Some(graph_view) = self.graph_views.get_mut(&midas_index) {
-                                event_consumed &= graph_view.handle_key_event(&key_event);
-                                if event_consumed {
-                                    graph_view.set_focus(true);
-                                }
-                            }
-                        }
-                        if !event_consumed {
-                            match key_event.code {
-                                KeyCode::Char('q') => self.exit(),
-                                KeyCode::Char('l') => self.show_log = !self.show_log,
-                                _ => {}
-                            }
-                        }
-                    }
+            Event::Key(key_event) => match self.window_manager.handle_key_event(&key_event) {
+                InteractionEvent::Escape => self.exit(),
+                InteractionEvent::RunCommand(command) => self.run_command(command.as_str()),
+                InteractionEvent::SymbolSelect(midas_index) => {
+                    self.window_manager.select_chart(midas_index)
                 }
-                InputMode::Command => {
-                    self.command_w.set_focus(false);
-                    if key_event.code == KeyCode::Enter {
-                        self.run_command(self.command_w.text().as_str());
-                        self.command_w.clear();
-                        self.input_mode = InputMode::Normal;
-                    } else if key_event.code == KeyCode::Esc {
-                        self.input_mode = InputMode::Normal;
-                        self.command_w.clear();
-                    } else {
-                        self.command_w.set_focus(true);
-                        self.command_w.handle_key_event(&key_event);
-                    }
+                InteractionEvent::UpdateStrategy => {
+                    self.update_strategy(&self.window_manager.get_oracle())
                 }
+                InteractionEvent::WindowOpen(window_type) => match window_type {
+                    WindowType::ORACLE => self.open_oracle(),
+                    _ => (),
+                },
+                _ => (),
             },
-            _ => {}
+            _ => (),
         };
         Ok(())
     }
@@ -375,14 +336,15 @@ impl App {
                     self.set_history_size(n);
                 }
             }
-            "BACKTEST" => self.run_backtest(&words[1..]),
+            "BACKTEST" => self.run_backtest(),
             _ => (),
         };
     }
 
     fn add_indicator(&mut self, words: &[&str]) {
-        if let Some((midas_index, _)) = self.symbol_tabs.current() {
-            if let Some(graph_view) = self.graph_views.get_mut(&midas_index) {
+        if let Some((midas_index, _)) = self.window_manager.tabs().current() {
+            if let Some(graph_view) = self.window_manager.chart(midas_index) {
+                ERROR!("add indicator {:?}", midas_index);
                 match match_indicator_from_text(&words) {
                     Some(indicator) => graph_view.add_indicator(&indicator),
                     None => (),
@@ -405,9 +367,9 @@ impl App {
         //};
     }
 
-    fn run_backtest(&mut self, _words: &[&str]) {
-        if let Some((midas_index, _)) = self.symbol_tabs.current() {
-            if let Some(graph_view) = self.graph_views.get_mut(&midas_index) {
+    fn run_backtest(&mut self) {
+        for (midas_index, _) in self.midas.hesperides.iter().enumerate() {
+            if let Some(graph_view) = self.window_manager.chart(midas_index) {
                 let bt = self
                     .midas
                     .run_backtest(midas_index, &graph_view.time_window);

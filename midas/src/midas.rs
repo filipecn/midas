@@ -104,7 +104,7 @@ impl Midas {
         Some(index)
     }
 
-    pub fn run_backtest(&mut self, index: usize, period: &TimeWindow) -> Backtest {
+    pub fn run_backtest(&self, index: usize, period: &TimeWindow) -> Backtest {
         match self.market.get_last(&self.hesperides[index].token, &period) {
             Ok(samples) => {
                 return backtest(&self.hesperides[index], samples);
@@ -130,6 +130,10 @@ impl Midas {
 
     pub fn get(&self, index: usize) -> Option<&Chrysus> {
         Some(&self.hesperides[index])
+    }
+
+    pub fn get_token(&self, index: usize) -> Option<Token> {
+        Some(self.hesperides[index].token.clone())
     }
 
     pub fn get_balance(&self) -> HashMap<Token, f64> {

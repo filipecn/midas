@@ -1,10 +1,8 @@
 use std::collections::HashMap;
 
 use dionysus::backtest::Backtest;
-use dionysus::INFO;
 use ratatui::style::Color;
 use ratatui::text::Line;
-use slog::slog_info;
 
 use crate::common;
 use crate::common::ListWindow;
@@ -40,15 +38,20 @@ impl StrategyWindow {
                 self.list.items.push(StrategyItem { name: txt, color });
             }
             if let Some(backtest) = backtests.get(&i) {
-                let mut txt = format!(
-                    "{:?} -> {:.5} / {:.5}",
-                    backtest.period.pretty_string(),
-                    backtest.symbol_balance,
-                    backtest.currency_balance
-                );
+                let mut txt = format!("{:?}", backtest.period.pretty_string(),);
                 if let Some(tick) = midas.ticks.get(&chrysus.token) {
-                    txt.push_str(format!(" {:.2}%", backtest.compute_profit(tick.price)).as_str());
+                    txt.push_str(
+                        format!(" [{:.2}%]", backtest.compute_profit(tick.price)).as_str(),
+                    );
                 }
+                txt.push_str(
+                    format!(
+                        " {:.5} / {:.5}",
+                        backtest.symbol_balance, backtest.currency_balance
+                    )
+                    .as_str(),
+                );
+
                 self.list.items.push(StrategyItem { name: txt, color });
             }
 

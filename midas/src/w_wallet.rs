@@ -6,9 +6,6 @@ use dionysus::finance::{MarketTick, Token};
 use dionysus::utils::compute_change_pct;
 use ratatui::text::Line;
 
-use dionysus::INFO;
-use slog::slog_info;
-
 struct BalanceItem {
     asset: String,
     free: f64,

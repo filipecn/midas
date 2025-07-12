@@ -1,5 +1,4 @@
-use ratatui::prelude::Color;
-use ratatui::prelude::Style;
+use crate::common::{self};
 use ratatui::widgets::{Block, Widget};
 use slog::{self, o, Drain};
 use slog_scope;
@@ -17,13 +16,19 @@ pub fn init() -> GlobalLoggerGuard {
 #[derive(Default)]
 pub struct LogWindow {}
 
-impl Widget for &LogWindow {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
-    where
-        Self: Sized,
-    {
+impl LogWindow {
+    pub fn draw(
+        &self,
+        area: ratatui::prelude::Rect,
+        buf: &mut ratatui::prelude::Buffer,
+        focus: bool,
+    ) {
         TuiLoggerWidget::default()
-            .block(Block::bordered().title("LOG"))
+            .block(
+                Block::bordered()
+                    .title("LOG")
+                    .border_style(common::focus_style(focus)),
+            )
             //.opt_formatter(formatter)
             .output_separator('|')
             .output_timestamp(Some("%F %H:%M:%S%.3f".to_string()))
@@ -31,7 +36,7 @@ impl Widget for &LogWindow {
             .output_target(false)
             .output_file(false)
             .output_line(false)
-            .style(Style::default().fg(Color::White))
+            //.style(Style::default().fg(color))
             .render(area, buf);
     }
 }

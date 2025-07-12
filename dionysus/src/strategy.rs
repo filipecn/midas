@@ -37,8 +37,8 @@ impl Oracle {
                 for counselor in counselors.iter() {
                     if let Ok(advice) = counselor.run(quote, history) {
                         match advice.signal {
-                            Signal::Buy => return Ok(Decision { advice, pct: 0.6 }),
-                            Signal::Sell => return Ok(Decision { advice, pct: 1.0 }),
+                            Signal::Buy => return Ok(Decision { advice, pct: 0.7 }),
+                            Signal::Sell => return Ok(Decision { advice, pct: 0.8 }),
                             _ => (),
                         }
                     }
@@ -241,7 +241,6 @@ impl Chrysus {
     }
 
     pub fn realize(&mut self, order: &Order) {
-        ERROR!("{:?}", order);
         match order.side {
             Side::Sell => {
                 if let Some(position_index) = order.position_index {
@@ -265,7 +264,7 @@ impl Chrysus {
                 self.locked_capital -= order.quantity * order.price;
             }
         }
-        self.print();
+        // self.print();
     }
 
     pub fn decide(&mut self, book: Book, history: &impl HistoricalData) -> Vec<Order> {
