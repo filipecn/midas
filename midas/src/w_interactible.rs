@@ -1,7 +1,8 @@
 use crate::{
-    w_command::CommandInput, w_graph::GraphView, w_log::LogWindow, w_market::MarketWindow,
-    w_oracle::OracleWindow, w_order_book::OrderBookWindow, w_strategy::StrategyWindow,
-    w_symbol_tabs::SymbolTabs, w_wallet::WalletWindow, w_window::WindowType,
+    w_command::CommandInput, w_graph::GraphView, w_help::HelpWindow, w_info::InfoWindow,
+    w_log::LogWindow, w_market::MarketWindow, w_oracle::OracleWindow,
+    w_order_book::OrderBookWindow, w_strategy::StrategyWindow, w_symbol_tabs::SymbolTabs,
+    w_wallet::WalletWindow, w_window::WindowType,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tui_prompts::State;
@@ -198,5 +199,33 @@ impl Interactible for StrategyWindow {
 impl Interactible for OrderBookWindow {
     fn handle_key_event(&mut self, _key_event: &KeyEvent, _global: bool) -> InteractionEvent {
         InteractionEvent::None
+    }
+}
+
+impl Interactible for HelpWindow {
+    fn handle_key_event(&mut self, key_event: &KeyEvent, global: bool) -> InteractionEvent {
+        if !global {
+            match (key_event.code, key_event.modifiers) {
+                (KeyCode::Esc, _) => InteractionEvent::Escape,
+                (KeyCode::Char('?'), _) => InteractionEvent::Escape,
+                _ => InteractionEvent::None,
+            }
+        } else {
+            InteractionEvent::None
+        }
+    }
+}
+
+impl Interactible for InfoWindow {
+    fn handle_key_event(&mut self, key_event: &KeyEvent, global: bool) -> InteractionEvent {
+        if !global {
+            match (key_event.code, key_event.modifiers) {
+                (KeyCode::Esc, _) => InteractionEvent::Escape,
+                (KeyCode::Char('/'), _) => InteractionEvent::Escape,
+                _ => InteractionEvent::None,
+            }
+        } else {
+            InteractionEvent::None
+        }
     }
 }

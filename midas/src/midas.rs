@@ -4,7 +4,7 @@ use std::fs::File;
 
 use dionysus::{
     backtest::{backtest, Backtest},
-    binance::BinanceMarket,
+    binance::{BinanceExchange, BinanceMarket},
     counselor::Counselor,
     finance::{Book, MarketEvent, MarketTick, Order, Sample, Token},
     historical_data::HistoricalData,
@@ -20,6 +20,7 @@ pub enum MidasEvent {
 }
 
 pub struct Midas {
+    pub exchange: BinanceExchange,
     pub wallet: BinanceWallet,
     pub market: BinanceMarket,
     pub hesperides: Vec<Chrysus>,
@@ -31,6 +32,7 @@ pub struct Midas {
 impl Midas {
     pub fn new(keys_file: &str, use_test_api: bool) -> Midas {
         Self {
+            exchange: BinanceExchange::default(),
             wallet: BinanceWallet::new(&keys_file, use_test_api),
             market: BinanceMarket::new(use_test_api),
             hesperides: Vec::new(),

@@ -17,6 +17,48 @@ use threadpool::ThreadPool;
 
 const MAX_CONCURRENT_THREADS: usize = 40;
 
+pub fn binance_error(e: binance::errors::ErrorKind) -> String {
+    match e {
+        binance::errors::ErrorKind::BinanceError(response) => match response.code {
+            -1013_i16 => return String::from("Filter failure: LOT_SIZE!"),
+            -2010_i16 => format!("Funds insufficient! {}", response.msg),
+            _ => format!("Non-catched code {}: {}", response.code, response.msg),
+        },
+        binance::errors::ErrorKind::Msg(msg) => {
+            format!("Binancelib error msg: {}", msg)
+        }
+        _ => format!("Other errors: {}.", e),
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ExchangeSymbolInfo {
+    pub min_qty: f64,
+
+    pub symbol: String,
+    pub status: String,
+    pub base_asset: String,
+    pub quote_asset: String,
+
+    pub iceberg_allowed: bool,
+    pub is_spot_trading_allowed: bool,
+    pub is_margin_trading_allowed: bool,
+
+    pub base_asset_precision: u64,
+    pub quote_precision: u64,
+
+    pub order_types: Vec<String>,
+
+    pub lot_min_qty: f64,
+}
+
+pub struct BinanceExchange {
+    pub server_time: u64,
+
+    general: binance::general::General,
+    symbols: HashMap<Token, ExchangeSymbolInfo>,
+}
+
 pub struct BinanceStream {
     pub stream: binance::userstream::UserStream,
     keep_running: AtomicBool,
@@ -30,9 +72,27 @@ pub struct BinanceMarket {
     thread_control: Arc<Mutex<HashMap<String, bool>>>,
 }
 
+impl Default for BinanceExchange {
+    fn default() -> Self {
+        let mut be = BinanceExchange {
+            general: binance::api::Binance::new(None, None),
+            server_time: 0,
+            symbols: HashMap::new(),
+        };
+        be.server_time = be.general.get_server_time().unwrap().server_time;
+        be
+    }
+}
+
 impl Default for BinanceStream {
     fn default() -> Self {
-        let keys: Vec<String> = read_to_string("/home/filipecn/dev/midas/keys")
+        BinanceStream::new("", false)
+    }
+}
+
+impl BinanceStream {
+    pub fn new(keys_file: &str, _use_test_api: bool) -> Self {
+        let keys: Vec<String> = read_to_string(&keys_file)
             .unwrap() // panic on possible file-reading errors
             .lines() // split the string into an iterator of string slices
             .map(String::from) // make each slice into a string
@@ -45,9 +105,7 @@ impl Default for BinanceStream {
             keep_running: AtomicBool::new(true),
         }
     }
-}
 
-impl BinanceStream {
     pub fn start(&mut self) -> Result<(), DiError> {
         if let Ok(answer) = self.stream.start() {
             let listen_key = answer.listen_key;
@@ -280,5 +338,75 @@ impl BinanceMarket {
                 web_socket.disconnect().unwrap();
             });
         }
+    }
+}
+
+impl ExchangeSymbolInfo {
+    pub fn new(info: binance::model::Symbol) -> Self {
+        let mut esi = ExchangeSymbolInfo::default();
+        esi.symbol = info.symbol;
+        esi.status = info.status;
+        esi.base_asset = info.base_asset;
+        esi.quote_asset = info.quote_asset;
+
+        esi.iceberg_allowed = info.iceberg_allowed;
+        esi.is_spot_trading_allowed = info.is_spot_trading_allowed;
+        esi.is_margin_trading_allowed = info.is_margin_trading_allowed;
+        esi.base_asset_precision = info.base_asset_precision;
+
+        esi.quote_precision = info.quote_precision;
+        esi.order_types = info.order_types;
+
+        for filter in info.filters.into_iter() {
+            match filter {
+                binance::model::Filters::PriceFilter {
+                    min_price,
+                    max_price,
+                    tick_size,
+                } => (),
+                binance::model::Filters::PercentPrice {
+                    multiplier_up,
+                    multiplier_down,
+                    avg_price_mins,
+                } => (),
+                binance::model::Filters::LotSize {
+                    min_qty,
+                    max_qty,
+                    step_size,
+                } => esi.lot_min_qty = min_qty.parse::<f64>().unwrap(),
+                binance::model::Filters::MinNotional {
+                    notional,
+                    min_notional,
+                    apply_to_market,
+                    avg_price_mins,
+                } => (),
+                binance::model::Filters::IcebergParts { limit } => {
+                    assert_eq!(limit.unwrap(), 10);
+                }
+                binance::model::Filters::MarketLotSize {
+                    min_qty,
+                    max_qty,
+                    step_size,
+                } => (),
+                binance::model::Filters::MaxNumOrders { max_num_orders } => (),
+                binance::model::Filters::MaxNumAlgoOrders {
+                    max_num_algo_orders,
+                } => (),
+                _ => (),
+            }
+        }
+        esi
+    }
+}
+
+impl BinanceExchange {
+    pub fn get(&mut self, token: &Token) -> ExchangeSymbolInfo {
+        if let Some(info) = self.symbols.get(token) {
+            return info.clone();
+        }
+        let symbol = self.general.get_symbol_info(token.to_string()).unwrap();
+        let info = ExchangeSymbolInfo::new(symbol);
+        self.symbols.insert(token.clone(), info.clone());
+        return info;
     }
 }

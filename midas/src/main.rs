@@ -2,11 +2,12 @@ use clap::Parser;
 use color_eyre::Result;
 use crossterm::event::{self, Event};
 use dionysus::backtest::Backtest;
-use dionysus::finance::Token;
+use dionysus::finance::{Order, OrderType, Side, TimeInForce, Token};
 use dionysus::historical_data::HistoricalData;
 use dionysus::indicators::match_indicator_from_text;
 use dionysus::strategy::Strategy;
-use dionysus::time::TimeUnit;
+use dionysus::time::{Date, TimeUnit};
+use dionysus::trader::Trader;
 use dionysus::ERROR;
 use ratatui::{
     layout::{Constraint, Layout},
@@ -31,6 +32,8 @@ mod midas;
 mod w_backtest;
 mod w_command;
 mod w_graph;
+mod w_help;
+mod w_info;
 mod w_interactible;
 mod w_log;
 mod w_market;
@@ -150,6 +153,20 @@ impl App {
         }
     }
 
+    fn open_info(&mut self) {
+        let mut token: Option<Token> = None;
+        if let Some(midas_index) = self.window_manager.tabs().current_midas_index() {
+            if let Some(c) = self.midas.get(midas_index) {
+                token = Some(c.token.clone());
+            }
+        }
+        if let Some(t) = token {
+            self.window_manager
+                .info()
+                .update(&mut self.midas.exchange, &t);
+        }
+    }
+
     fn update_graph(&mut self, midas_index: usize) {
         if let Some(token) = self.midas.get_token(midas_index) {
             if let Some(graph_view) = self.window_manager.chart(midas_index) {
@@ -169,6 +186,7 @@ impl App {
         for midas_index in 0..self.midas.hesperides.len() {
             self.open_tab(midas_index);
         }
+
         //self.run_command("oracle mean-reversion 10");
         //self.run_command("oracle macd-crossover 12 26 9");
         //self.run_command("oracle macd-zero-cross 12 26 9");
@@ -311,6 +329,7 @@ impl App {
                 }
                 InteractionEvent::WindowOpen(window_type) => match window_type {
                     WindowType::ORACLE => self.open_oracle(),
+                    WindowType::INFO => self.open_info(),
                     _ => (),
                 },
                 _ => (),
@@ -337,6 +356,8 @@ impl App {
                 }
             }
             "BACKTEST" => self.run_backtest(),
+            "BUY" => self.create_order(Side::Buy),
+            "SELL" => self.create_order(Side::Sell),
             _ => (),
         };
     }
@@ -375,6 +396,46 @@ impl App {
                     .run_backtest(midas_index, &graph_view.time_window);
                 graph_view.set_backtest(&bt);
                 self.backtests.insert(midas_index, bt.clone());
+            }
+        }
+    }
+
+    fn create_order(&mut self, signal: Side) {
+        if let Some((_, token)) = self.window_manager.tabs().current() {
+            // get token info
+            let token_info = self.midas.exchange.get(&token);
+            if let Some(book) = self.midas.get_book(&token) {
+                if let Some(quote) = book.quote() {
+                    // get symbol info
+                    let price = quote.ask.unwrap_or(0.0);
+                    // consider 1 dollar
+                    let shares = 10.0 / price;
+                    if shares < token_info.lot_min_qty {
+                        let cost = price * token_info.lot_min_qty;
+                        ERROR!("min cost is: {}", cost);
+                    }
+                    match signal {
+                        Side::Buy => {
+                            let order = Order {
+                                index: 0,
+                                position_index: None,
+                                id: None,
+                                token: quote.token.clone(),
+                                date: Date::now(),
+                                quantity: (shares * 100.0).round() / 100.0,
+                                side: Side::Buy,
+                                price,
+                                stop_price: None,
+                                order_type: OrderType::Market,
+                                tif: TimeInForce::default(),
+                            };
+                            ERROR!("{:?}", order);
+                            ERROR!("{:?}", self.midas.wallet.buy_order(&order));
+                        }
+                        Side::Sell => (),
+                        _ => (),
+                    }
+                }
             }
         }
     }

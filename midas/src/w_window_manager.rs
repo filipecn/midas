@@ -1,6 +1,7 @@
 use crate::{
     common::popup_area,
     w_graph::GraphView,
+    w_info::InfoWindow,
     w_interactible::InteractionEvent,
     w_market::MarketWindow,
     w_oracle::OracleWindow,
@@ -11,9 +12,8 @@ use crate::{
     w_window::{MidasWindow, WindowType},
 };
 use crossterm::event::{KeyCode, KeyEvent};
-use dionysus::{strategy::Strategy, INFO};
+use dionysus::strategy::Strategy;
 use ratatui::{layout::Rect, widgets::Clear, Frame};
-use slog::slog_info;
 use std::collections::HashMap;
 
 pub struct WindowManager {
@@ -39,6 +39,10 @@ impl WindowManager {
             .insert(KeyCode::Char('l'), (WindowType::LOG, true));
         wm.key_codes
             .insert(KeyCode::Char('o'), (WindowType::ORACLE, true));
+        wm.key_codes
+            .insert(KeyCode::Char('?'), (WindowType::HELP, true));
+        wm.key_codes
+            .insert(KeyCode::Char('/'), (WindowType::INFO, true));
 
         wm.open(WindowType::LOG);
         wm.open(WindowType::STRATEGY);
@@ -48,6 +52,8 @@ impl WindowManager {
         wm.open(WindowType::ORACLE);
         wm.open(WindowType::ORDERBOOK);
         wm.open(WindowType::TABS);
+        wm.open(WindowType::HELP);
+        wm.open(WindowType::INFO);
         wm
     }
 
@@ -110,6 +116,13 @@ impl WindowManager {
         self.windows[WindowType::ORDERBOOK as usize]
             .content
             .downcast_mut::<OrderBookWindow>()
+            .unwrap()
+    }
+
+    pub fn info(&mut self) -> &mut InfoWindow {
+        self.windows[WindowType::INFO as usize]
+            .content
+            .downcast_mut::<InfoWindow>()
             .unwrap()
     }
 
@@ -195,11 +208,11 @@ impl WindowManager {
                 }
             }
             if let Some((window_type, is_float)) = self.key_codes.get(&key_event.code) {
-                if *is_float {
-                    self.float_window = Some(self.window_index(window_type.clone()));
-                }
                 let wt = window_type.clone();
-                self.select_window(window_type.clone());
+                if *is_float {
+                    self.float_window = Some(self.window_index(wt.clone()));
+                }
+                self.select_window(wt.clone());
                 return InteractionEvent::WindowOpen(wt);
             }
         }

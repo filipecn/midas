@@ -13,7 +13,7 @@ rand = { version = "0.8", features = ["std_rng"] }
 rand_distr = "0.4"
 log = "0.4.25"
 ta = "0.5.0"
-binance = { git = "https://github.com/wisespace-io/binance-rs.git" }
+binance = "0.21.0"
 regex = "1.11.1"
 threadpool = "1.8.1"
 slog = "2.7.0"

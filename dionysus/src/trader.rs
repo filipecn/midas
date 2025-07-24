@@ -1,3 +1,4 @@
+use crate::binance::binance_error;
 use crate::finance::{DiError, Order, OrderType, Side, TimeInForce};
 use crate::wallet::BinanceWallet;
 use binance::model::Transaction;
@@ -31,11 +32,11 @@ impl Trader for BinanceWallet {
             OrderType::StopMarket => Err(DiError::NotImplemented),
             OrderType::Limit => match self.account.limit_buy(symbol, order.quantity, order.price) {
                 Ok(answer) => Ok(answer),
-                Err(e) => Err(DiError::Message(format!("{}", e))),
+                Err(e) => Err(DiError::Message(binance_error(e.0))),
             },
             OrderType::Market => match self.account.market_buy(symbol, order.quantity) {
                 Ok(answer) => Ok(answer),
-                Err(e) => Err(DiError::Message(format!("{}", e))),
+                Err(e) => Err(DiError::Message(binance_error(e.0))),
             },
             OrderType::StopLimit => match self.account.stop_limit_buy_order(
                 symbol,
@@ -45,7 +46,7 @@ impl Trader for BinanceWallet {
                 convert_tif(&order.tif),
             ) {
                 Ok(answer) => Ok(answer),
-                Err(e) => Err(DiError::Message(format!("{}", e))),
+                Err(e) => Err(DiError::Message(binance_error(e.0))),
             },
         }
     }

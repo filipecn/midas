@@ -172,7 +172,7 @@ impl Chrysus {
         format!("{} {}", self.token.name(), self.strategy.name())
     }
 
-    fn print(&self) {
+    fn _print(&self) {
         let s = format!(
             "{:?} {:?} {:?} {:?}",
             self.token.name(),

@@ -1,4 +1,6 @@
 use crate::w_graph::GraphView;
+use crate::w_help::HelpWindow;
+use crate::w_info::InfoWindow;
 use crate::w_interactible::{Interactible, InteractionEvent};
 use crate::w_log::LogWindow;
 use crate::w_market::MarketWindow;
@@ -67,6 +69,18 @@ impl WindowContent for OrderBookWindow {
     }
 }
 
+impl WindowContent for HelpWindow {
+    fn render(&mut self, frame: &mut Frame, area: Rect, _focus: bool) {
+        self.render(area, frame.buffer_mut());
+    }
+}
+
+impl WindowContent for InfoWindow {
+    fn render(&mut self, frame: &mut Frame, area: Rect, _focus: bool) {
+        self.render(area, frame.buffer_mut());
+    }
+}
+
 impl WindowContent for SymbolTabs {
     fn render(&mut self, frame: &mut Frame, area: Rect, _focus: bool) {
         self.draw(area, frame.buffer_mut());
@@ -97,7 +111,10 @@ pub enum WindowType {
     ORACLE = 5,
     ORDERBOOK = 6,
     TABS = 7,
-    CHART = 8,
+    HELP = 8,
+    INFO = 9,
+    // CHART must be the last, window_manager concatenates charts after unique windows
+    CHART = 10,
 }
 
 pub struct MidasWindow {
@@ -177,6 +194,8 @@ impl MidasWindow {
             WindowType::ORDERBOOK => create_window!(window_type, OrderBookWindow),
             WindowType::TABS => create_window!(window_type, SymbolTabs),
             WindowType::CHART => create_window!(window_type, GraphView),
+            WindowType::HELP => create_window!(window_type, HelpWindow),
+            WindowType::INFO => create_window!(window_type, InfoWindow),
         }
     }
 
@@ -197,6 +216,8 @@ impl MidasWindow {
                 WindowType::ORDERBOOK => render!(self, frame, OrderBookWindow, focus, area),
                 WindowType::ORACLE => render!(self, frame, OracleWindow, focus, area),
                 WindowType::CHART => render!(self, frame, GraphView, focus, area),
+                WindowType::HELP => render!(self, frame, HelpWindow, focus, area),
+                WindowType::INFO => render!(self, frame, InfoWindow, focus, area),
             }
         }
     }
@@ -225,6 +246,8 @@ impl MidasWindow {
                     return handle_key_event!(self, key_event, OracleWindow, global)
                 }
                 WindowType::CHART => return handle_key_event!(self, key_event, GraphView, global),
+                WindowType::HELP => return handle_key_event!(self, key_event, HelpWindow, global),
+                WindowType::INFO => return handle_key_event!(self, key_event, InfoWindow, global),
             };
         }
         InteractionEvent::None
