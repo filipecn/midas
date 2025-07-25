@@ -4,6 +4,7 @@ use crate::w_info::InfoWindow;
 use crate::w_interactible::{Interactible, InteractionEvent};
 use crate::w_log::LogWindow;
 use crate::w_market::MarketWindow;
+use crate::w_order::OrderWindow;
 use crate::w_order_book::OrderBookWindow;
 use crate::w_strategy::StrategyWindow;
 use crate::w_symbol_tabs::SymbolTabs;
@@ -69,6 +70,12 @@ impl WindowContent for OrderBookWindow {
     }
 }
 
+impl WindowContent for OrderWindow {
+    fn render(&mut self, frame: &mut Frame, area: Rect, _focus: bool) {
+        self.render(area, frame.buffer_mut());
+    }
+}
+
 impl WindowContent for HelpWindow {
     fn render(&mut self, frame: &mut Frame, area: Rect, _focus: bool) {
         self.render(area, frame.buffer_mut());
@@ -113,8 +120,9 @@ pub enum WindowType {
     TABS = 7,
     HELP = 8,
     INFO = 9,
+    ORDER = 10,
     // CHART must be the last, window_manager concatenates charts after unique windows
-    CHART = 10,
+    CHART = 11,
 }
 
 pub struct MidasWindow {
@@ -196,6 +204,7 @@ impl MidasWindow {
             WindowType::CHART => create_window!(window_type, GraphView),
             WindowType::HELP => create_window!(window_type, HelpWindow),
             WindowType::INFO => create_window!(window_type, InfoWindow),
+            WindowType::ORDER => create_window!(window_type, OrderWindow),
         }
     }
 
@@ -218,6 +227,7 @@ impl MidasWindow {
                 WindowType::CHART => render!(self, frame, GraphView, focus, area),
                 WindowType::HELP => render!(self, frame, HelpWindow, focus, area),
                 WindowType::INFO => render!(self, frame, InfoWindow, focus, area),
+                WindowType::ORDER => render!(self, frame, OrderWindow, focus, area),
             }
         }
     }
@@ -248,6 +258,9 @@ impl MidasWindow {
                 WindowType::CHART => return handle_key_event!(self, key_event, GraphView, global),
                 WindowType::HELP => return handle_key_event!(self, key_event, HelpWindow, global),
                 WindowType::INFO => return handle_key_event!(self, key_event, InfoWindow, global),
+                WindowType::ORDER => {
+                    return handle_key_event!(self, key_event, OrderWindow, global)
+                }
             };
         }
         InteractionEvent::None

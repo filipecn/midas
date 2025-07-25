@@ -44,6 +44,10 @@ pub enum Token {
 }
 
 impl Token {
+    pub fn from_string(s: &String) -> Token {
+        Token::Pair((s[0..3].to_string(), s[3..6].to_string()))
+    }
+
     pub fn pair(symbol: &str, currency: &str) -> Token {
         Token::Pair((symbol.to_string(), currency.to_string()))
     }
@@ -129,10 +133,32 @@ pub enum OrderType {
     StopLimit,
 }
 
+impl OrderType {
+    pub fn from_string(name: &String) -> OrderType {
+        match &name[..] {
+            "Market" => OrderType::Market,
+            "Limit" => OrderType::Limit,
+            "StopMarket" => OrderType::StopMarket,
+            "StopLimit" => OrderType::StopLimit,
+            _ => OrderType::Market,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Side {
     Buy,
     Sell,
+}
+
+impl Side {
+    pub fn from_string(name: &String) -> Side {
+        if name == &String::from("Buy") {
+            Side::Buy
+        } else {
+            Side::Sell
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -141,6 +167,17 @@ pub enum TimeInForce {
     GTC, // Good Till Cancel
     IOC, // Immediate or Cancel
     FOK, // Fill or Kill
+}
+
+impl TimeInForce {
+    pub fn from_string(name: &String) -> TimeInForce {
+        match &name[..] {
+            "GTC" => TimeInForce::GTC,
+            "IOC" => TimeInForce::IOC,
+            "FOK" => TimeInForce::FOK,
+            _ => TimeInForce::GTC,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -156,6 +193,15 @@ pub struct Order {
     pub stop_price: Option<f64>,
     pub order_type: OrderType,
     pub tif: TimeInForce,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OrderStatus {
+    pub order: Order,
+    pub executed_qty: f64,
+    pub status: String,
+    pub update_time: Date,
+    pub is_working: bool,
 }
 
 /// A financial quote is the price at which an asset was last traded, or the

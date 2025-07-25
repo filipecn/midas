@@ -5,6 +5,7 @@ use crate::{
     w_interactible::InteractionEvent,
     w_market::MarketWindow,
     w_oracle::OracleWindow,
+    w_order::OrderWindow,
     w_order_book::OrderBookWindow,
     w_strategy::StrategyWindow,
     w_symbol_tabs::SymbolTabs,
@@ -43,6 +44,8 @@ impl WindowManager {
             .insert(KeyCode::Char('?'), (WindowType::HELP, true));
         wm.key_codes
             .insert(KeyCode::Char('/'), (WindowType::INFO, true));
+        wm.key_codes
+            .insert(KeyCode::Char('O'), (WindowType::ORDER, true));
 
         wm.open(WindowType::LOG);
         wm.open(WindowType::STRATEGY);
@@ -54,6 +57,7 @@ impl WindowManager {
         wm.open(WindowType::TABS);
         wm.open(WindowType::HELP);
         wm.open(WindowType::INFO);
+        wm.open(WindowType::ORDER);
         wm
     }
 
@@ -123,6 +127,13 @@ impl WindowManager {
         self.windows[WindowType::INFO as usize]
             .content
             .downcast_mut::<InfoWindow>()
+            .unwrap()
+    }
+
+    pub fn order(&mut self) -> &mut OrderWindow {
+        self.windows[WindowType::ORDER as usize]
+            .content
+            .downcast_mut::<OrderWindow>()
             .unwrap()
     }
 

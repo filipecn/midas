@@ -13,6 +13,7 @@ impl HelpWindow {
         let text = vec![
             Line::from("Esc    : Close float windows."),
             Line::from("?      : Open/close help float window."),
+            Line::from("/      : Open/close info float window."),
             Line::from("l      : Open/close log float window."),
             Line::from("o      : Open current oracle float window."),
             Line::from("ctrl+t : Iterate pairs."),

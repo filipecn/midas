@@ -38,6 +38,7 @@ mod w_interactible;
 mod w_log;
 mod w_market;
 mod w_oracle;
+mod w_order;
 mod w_order_book;
 mod w_strategy;
 mod w_symbol_tabs;
@@ -165,6 +166,10 @@ impl App {
                 .info()
                 .update(&mut self.midas.exchange, &t);
         }
+    }
+
+    fn open_order(&mut self) {
+        self.window_manager.order().update(&self.midas.wallet);
     }
 
     fn update_graph(&mut self, midas_index: usize) {
@@ -330,6 +335,7 @@ impl App {
                 InteractionEvent::WindowOpen(window_type) => match window_type {
                     WindowType::ORACLE => self.open_oracle(),
                     WindowType::INFO => self.open_info(),
+                    WindowType::ORDER => self.open_order(),
                     _ => (),
                 },
                 _ => (),
@@ -426,7 +432,7 @@ impl App {
                                 side: Side::Buy,
                                 price,
                                 stop_price: None,
-                                order_type: OrderType::Market,
+                                order_type: OrderType::Limit,
                                 tif: TimeInForce::default(),
                             };
                             ERROR!("{:?}", order);
