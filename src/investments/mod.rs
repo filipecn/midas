@@ -1,7 +1,6 @@
 use chrono::{DateTime, Utc};
 use std::fmt;
 
-pub mod db;
 pub mod investment_transactions_list;
 pub mod investment_transactions_view;
 pub mod investments_list;

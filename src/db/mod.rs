@@ -23,3 +23,7 @@ impl DBConnection {
         Ok(db)
     }
 }
+
+pub mod budget;
+pub mod fundamentus;
+pub mod investments;

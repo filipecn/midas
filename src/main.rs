@@ -29,19 +29,19 @@ mod db;
 mod fundamentus;
 mod investments;
 mod market;
-mod pluggy_client;
+mod source_data;
 mod scoring;
 mod tui;
 mod widgets;
 use crate::{
     budget::{
         data::{Categories, CategorizationRules},
-        db::Transactions,
     },
     core::Accounts,
     db::{DB, DBConnection},
-    fundamentus::fetcher::{FUNDAMENTUS, Fundamentus},
-    investments::db::Investments,
+    db::budget::Transactions,
+    source_data::fundamentus::{FUNDAMENTUS, Fundamentus},
+    db::investments::Investments,
     market::{MARKET_DATA, MarketData},
     tui::TUI,
 };
@@ -52,7 +52,7 @@ use crate::{
         investment_transactions_view::InvestmentTransactionsView, investments_view::InvestmentsView,
     },
     market::view::MarketView,
-    pluggy_client::{PLUGGY, PluggyError},
+    source_data::pluggy::{PLUGGY, PluggyError},
     widgets::{InteractableWidget, logger::LoggerWidget},
 };
 
@@ -190,10 +190,10 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let transactions = budget::db::Transactions::read_all()?;
+    let transactions = db::budget::Transactions::read_all()?;
     let mut transactions_view = TransactionsView::new(transactions.clone())?;
-    let investments = investments::db::Investments::read_all()?;
-    let investment_transactions = investments::db::InvestmentTransactions::read_all()?;
+    let investments = db::investments::Investments::read_all()?;
+    let investment_transactions = db::investments::InvestmentTransactions::read_all()?;
     let mut investments_view =
         InvestmentsView::new(investments.clone(), investment_transactions.clone());
     let mut investment_transactions_view =
@@ -362,7 +362,7 @@ fn load_transactions() -> Result<(), Box<dyn Error>> {
         .lock()
         .unwrap();
 
-    budget::db::init(&db.conn)?;
+    db::budget::init(&db.conn)?;
 
     let accounts = Accounts::get_all();
 
@@ -392,7 +392,7 @@ fn load_investments() -> Result<(), Box<dyn Error>> {
         .lock()
         .unwrap();
 
-    investments::db::init(&db.conn)?;
+    db::investments::init(&db.conn)?;
 
     let accounts = Accounts::get_all();
 
@@ -416,7 +416,7 @@ fn load_investments() -> Result<(), Box<dyn Error>> {
 }
 
 fn load_investment_transactions() -> Result<(), Box<dyn Error>> {
-    let investments = investments::db::Investments::read_all()?;
+    let investments = db::investments::Investments::read_all()?;
 
     for investment in investments {
         match PLUGGY.with_borrow_mut(|p| p.get_investment_transactions(&investment.identifier)) {
@@ -426,7 +426,7 @@ fn load_investment_transactions() -> Result<(), Box<dyn Error>> {
                     .ok_or_else(|| rusqlite::Error::InvalidQuery)?
                     .lock()
                     .unwrap();
-                investments::db::InvestmentTransactions::write(
+                db::investments::InvestmentTransactions::write(
                     &mut db.conn,
                     &investment_transactions,
                 )?;
@@ -467,7 +467,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     if args.score || args.eligibility || args.b3_snapshot.is_some() {
         let db = DBConnection::new(&args.db)?;
-        fundamentus::db::init(&db.conn)?;
+        db::fundamentus::init(&db.conn)?;
         b3_eligibility::init(&db.conn)?;
         if let Some(path) = &args.b3_snapshot {
             let snapshot = b3_eligibility::parse_snapshot(&std::fs::read_to_string(path)?)?;
@@ -480,7 +480,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if args.eligibility || args.score_eligibility.is_some() {
-            let details = fundamentus::db::Stocks::read_all_from(&db.conn)?;
+            let details = db::fundamentus::Stocks::read_all_from(&db.conn)?;
             let tickers = details
                 .iter()
                 .map(|stock| stock.ticker.clone())
@@ -531,7 +531,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if args.score {
-            let details = fundamentus::db::Stocks::read_all_from(&db.conn)?;
+            let details = db::fundamentus::Stocks::read_all_from(&db.conn)?;
             let stocks = details
                 .iter()
                 .map(scoring::StockFundamentals::from)
@@ -561,13 +561,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     CategorizationRules::load(&args.rules)?;
 
     let db = DBConnection::new(&args.db)?;
-    fundamentus::db::init(&db.conn)?;
+    db::fundamentus::init(&db.conn)?;
     b3_eligibility::init(&db.conn)?;
     if let Err(_) = DB.set(Mutex::new(db)) {
         eprintln!("Failed to create/load database");
     }
 
-    let fun = fundamentus::fetcher::Fundamentus::new();
+    let fun = source_data::fundamentus::Fundamentus::new();
     if let Err(_) = FUNDAMENTUS.set(Mutex::new(fun)) {
         eprintln!("Error initializing fundamentus");
     }

@@ -1,11 +1,12 @@
 use crate::{
     budget::{
         Category, Transaction, category::Classifier, category_picker::CategoryPicker,
-        data::CategorizationRules, db::Transactions, rule_editor::RuleEditor,
+        data::CategorizationRules, rule_editor::RuleEditor,
         transactions_list::TransactionsList,
     },
     widgets::{ActionResult, InteractableWidget},
 };
+use crate::db::budget::Transactions;
 use ratatui::{
     layout::{Constraint, Direction, Layout},
     text::{Line, Text},

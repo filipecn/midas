@@ -1,5 +1,3 @@
-pub mod db;
-pub mod fetcher;
 pub mod stock_view;
 pub mod stocks_list;
 pub mod view;

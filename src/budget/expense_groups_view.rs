@@ -13,12 +13,13 @@ use ratatui_interact::state::FocusManager;
 
 use crate::{
     budget::{
-        data::Categories, db::Transactions, expense_group_tree::ExpenseGroupTree,
+        data::Categories, expense_group_tree::ExpenseGroupTree,
         transactions_list::TransactionsList, Transaction,
     },
     tui::TUI,
     widgets::InteractableWidget,
 };
+use crate::db::budget::Transactions;
 
 /// Which panel is focused
 #[derive(Clone, Eq, PartialEq, Hash)]

@@ -12,7 +12,7 @@ use crate::widgets::{
     list::{GenericList, ListColumn},
 };
 use crate::{
-    fundamentus::fetcher::Fundamentus,
+    source_data::fundamentus::Fundamentus,
     market::{HistoryState, MarketData, TechnicalAnalysisRequest},
     widgets::ActionResult,
 };

@@ -1,6 +1,7 @@
 use crate::{
-    fundamentus::{StockDetails, StockSummary, fetcher, fetcher::StockDetailsState},
+    fundamentus::{StockDetails, StockSummary},
     scoring::{self, Category, QarpStrategy, ScoringReport, StockEvaluation, StockFundamentals},
+    source_data::fundamentus::{self as fetcher, StockDetailsState},
     widgets::{InteractableWidget, input_box::InputBox, list::GenericList},
 };
 use ratatui::{
@@ -138,7 +139,7 @@ impl FundamentusView {
                 Some(StockDetailsState::Loaded(details)) => {
                     if !matches!(window.content, DetailsContent::Loaded { .. }) {
                         if let Err(error) =
-                            crate::fundamentus::db::Stocks::write_stock_to_db(&details)
+                            crate::db::fundamentus::Stocks::write_stock_to_db(&details)
                         {
                             log::error!(target: "midas", "Failed to save stock details for {}: {error}", details.ticker);
                         }
@@ -197,7 +198,7 @@ impl FundamentusView {
                         } => {
                             let (saved, failed_ticker, loaded_sector) = match result {
                                 Ok(details) => {
-                                    match crate::fundamentus::db::Stocks::write_stock_to_db(
+                                    match crate::db::fundamentus::Stocks::write_stock_to_db(
                                         &details,
                                     ) {
                                         Ok(_) => {
@@ -328,7 +329,7 @@ impl FundamentusView {
     }
 
     fn load_detail_snapshots(&mut self, tickers: &[String]) {
-        match crate::fundamentus::db::Stocks::read_all() {
+        match crate::db::fundamentus::Stocks::read_all() {
             Ok(stocks) => {
                 self.detail_snapshots = stocks
                     .into_iter()
@@ -480,7 +481,7 @@ impl FundamentusView {
     }
 
     fn load_saved_sectors(&mut self) {
-        match crate::fundamentus::db::Stocks::read_all() {
+        match crate::db::fundamentus::Stocks::read_all() {
             Ok(stocks) => {
                 self.sector_by_ticker = stocks
                     .iter()

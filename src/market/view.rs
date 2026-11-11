@@ -15,9 +15,9 @@ use ratatui_interact::components::{Spinner, SpinnerFrames, SpinnerState, Spinner
 use crate::{
     fundamentus::{
         StockDetails,
-        fetcher::{self, StockDetailsState},
     },
     market::{HistoryState, MarketData, TechnicalAnalysisRequest},
+    source_data::fundamentus::{self as fetcher, StockDetailsState},
     widgets::{
         ActionResult, InteractableWidget,
         input_box::InputBox,
@@ -126,7 +126,7 @@ impl MarketView {
                     .as_ref()
                     .is_some_and(|window| !window.fundamentus_loaded);
                 if should_store {
-                    if let Err(error) = crate::fundamentus::db::Stocks::write_stock_to_db(&details)
+                    if let Err(error) = crate::db::fundamentus::Stocks::write_stock_to_db(&details)
                     {
                         log::error!(
                             target: "midas",
@@ -192,7 +192,7 @@ impl MarketView {
     }
 
     fn load_saved_stocks(&mut self) {
-        match crate::fundamentus::db::Stocks::read_all() {
+        match crate::db::fundamentus::Stocks::read_all() {
             Ok(stocks) => {
                 self.all_stocks = stocks
                     .into_iter()

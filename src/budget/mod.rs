@@ -4,7 +4,6 @@ pub mod category;
 pub mod category_picker;
 pub mod category_view;
 pub mod data;
-pub mod db;
 pub mod expense_group_tree;
 pub mod expense_groups_view;
 pub mod rule_editor;

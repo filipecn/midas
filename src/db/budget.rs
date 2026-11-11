@@ -49,7 +49,7 @@ impl Transactions {
                 if extension == "csv" {
                     // load transactions from the csv file
                     // let transactions = data::load_transactions_from_csv(&csv_file.path())?;
-                    // db::Transactions::write(&mut db.conn, &transactions)?;
+                    // db::budget::Transactions::write(&mut db.conn, &transactions)?;
                 }
             }
         }
