@@ -1,0 +1,98 @@
+[
+  {
+    "source_category_id": "15030000",
+    "source_category_name": "Tax on financial operations",
+    "target_category": "Finance",
+    "target_subcategory": "Tax on financial operations"
+  },
+  {
+    "source_category_id": "08020000",
+    "source_category_name": "Electronics",
+    "target_category": "Shopping",
+    "target_subcategory": "Electronics"
+  },
+  {
+    "source_category_id": "10000000",
+    "source_category_name": "Groceries",
+    "target_category": "Groceries",
+    "target_subcategory": "Food & Beverages"
+  },
+  {
+    "source_category_id": "08060000",
+    "source_category_name": "Bookstore",
+    "target_category": "Entertainment & Media",
+    "target_subcategory": "Bookstore"
+  },
+  {
+    "source_category_id": "11010000",
+    "source_category_name": "Eating out",
+    "target_category": "Dining",
+    "target_subcategory": "Restaurants"
+  },
+  {
+    "source_category_id": "08000000",
+    "source_category_name": "Shopping",
+    "target_category": "Shopping",
+    "target_subcategory": "General Merchandise"
+  },
+  {
+    "source_category_id": "18020000",
+    "source_category_name": "Pharmacy",
+    "target_category": "Health",
+    "target_subcategory": "Pharmacy"
+  },
+  {
+    "source_category_id": "17030000",
+    "source_category_name": "Houseware",
+    "target_category": "Shopping",
+    "target_subcategory": "Houseware"
+  },
+  {
+    "source_category_id": "07020003",
+    "source_category_name": "School",
+    "target_category": "Education",
+    "target_subcategory": "Tuition"
+  },
+  {
+    "source_category_id": "05100000",
+    "source_category_name": "Credit card payment",
+    "target_category": "Transfers & Capital",
+    "target_subcategory": "Credit Card Payments"
+  },
+  {
+    "source_category_id": "09000000",
+    "source_category_name": "Digital services",
+    "target_category": "Entertainment & Media",
+    "target_subcategory": "Digital services"
+  },
+  {
+    "source_category_id": "05000000",
+    "source_category_name": "Transfers",
+    "target_category": "Transfers & Capital",
+    "target_subcategory": "Internal Transfers"
+  },
+  {
+    "source_category_id": "07030000",
+    "source_category_name": "Wellness and fitness",
+    "target_category": "Health",
+    "target_subcategory": "Fitness or Health club membership"
+  },
+  {
+    "source_category_id": "05090000",
+    "source_category_name": "Third party transfers",
+    "target_category": "Transfers & Capital",
+    "target_subcategory": "Investment"
+  },
+  {
+    "source_category_id": "03000000",
+    "source_category_name": "Investments",
+    "target_category": "Transfers & Capital",
+    "target_subcategory": "Investment"
+  },
+  {
+    "source_category_id": "08000000",
+    "source_category_name": "Shopping",
+    "target_category": "Transfers & Capital",
+    "target_subcategory": "Investment"
+  }
+]

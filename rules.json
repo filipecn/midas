@@ -1,0 +1,187 @@
+[
+  {
+    "pattern": "(?i)overleaf",
+    "category": "Education",
+    "subcategory": "Research"
+  },
+  {
+    "pattern": "(?i)grocery|supermarket|whole foods|Santa Gemma",
+    "category": "Groceries",
+    "subcategory": "Market"
+  },
+  {
+    "pattern": "(?i)oxxo",
+    "category": "Groceries",
+    "subcategory": "Food & Beverages"
+  },
+  {
+    "pattern": "(?i)amazon",
+    "category": "Shopping",
+    "subcategory": "General Merchandise"
+  },
+  {
+    "pattern": "(?i)gas|fuel|shell|chevron|bp",
+    "category": "Transportation",
+    "subcategory": "Gasoline/Fuel"
+  },
+  {
+    "pattern": "(?i)restaurant|cafe|pizza|burger",
+    "category": "Dining",
+    "subcategory": "Restaurants"
+  },
+  {
+    "pattern": "(?i)netflix|spotify|hulu|disney",
+    "category": "Entertainment & Media",
+    "subcategory": "Subscriptions"
+  },
+  {
+    "pattern": "(?i)gym|fitness|yoga",
+    "category": "Health",
+    "subcategory": "Fitness or Health club membership"
+  },
+  {
+    "pattern": "(?i)hotel|airbnb|motel",
+    "category": "Travel",
+    "subcategory": "Accommodation"
+  },
+  {
+    "pattern": "(?i)autopass",
+    "category": "Transportation",
+    "subcategory": "Public Transportation"
+  },
+  {
+    "pattern": "(?i)pagamento de fatura|fatura",
+    "category": "Transfers & Capital",
+    "subcategory": "Credit Card Payments"
+  },
+  {
+    "pattern": "(?i)zamp",
+    "category": "Dining",
+    "subcategory": "Fast Food"
+  },
+  {
+    "pattern": "(?i)velox tickets",
+    "category": "Entertainment & Media",
+    "subcategory": "Entertainment"
+  },
+  {
+    "pattern": "(?i)hamburgueria",
+    "category": "Dining",
+    "subcategory": "Fast Food"
+  },
+  {
+    "pattern": "(?i)padaria",
+    "category": "Dining",
+    "subcategory": "Bakery"
+  },
+  {
+    "pattern": "(?i)restaurante",
+    "category": "Dining",
+    "subcategory": "Restaurants"
+  },
+  {
+    "pattern": "(?i)mini mercado|mercado",
+    "category": "Groceries",
+    "subcategory": "Market"
+  },
+  {
+    "pattern": "(?i)leroy merlin",
+    "category": "Home & Utilities",
+    "subcategory": "Home Improvement"
+  },
+  {
+    "pattern": "(?i)tesouro direto|investimentos",
+    "category": "Transfers & Capital",
+    "subcategory": "Savings"
+  },
+  {
+    "pattern": "(?i)policia rodo",
+    "category": "Transportation",
+    "subcategory": "Automotive Expenses"
+  },
+  {
+    "pattern": "(?i)carvalho nascimento",
+    "category": "Home & Utilities",
+    "subcategory": "Rent"
+  },
+  {
+    "pattern": "(?i)sara franceschini",
+    "category": "Health",
+    "subcategory": "Therapy"
+  },
+  {
+    "pattern": "(?i)adapta contabil",
+    "category": "Finance",
+    "subcategory": "Service Charges/Fees"
+  },
+  {
+    "pattern": "(?i)magda",
+    "category": "Personal & Family Care",
+    "subcategory": "Family Care"
+  },
+  {
+    "pattern": "(?i)kennedy",
+    "category": "Dining",
+    "subcategory": "Fast Food"
+  },
+  {
+    "pattern": "(?i)renda|rdb|compra de renda",
+    "category": "Transfers & Capital",
+    "subcategory": "Investment"
+  },
+  {
+    "pattern": "(?i)melimais",
+    "category": "Entertainment & Media",
+    "subcategory": "Subscriptions"
+  },
+  {
+    "pattern": "(?i)posto",
+    "category": "Transportation",
+    "subcategory": "Gasoline/Fuel"
+  },
+  {
+    "pattern": "(?i)ginastica",
+    "category": "Health",
+    "subcategory": "Fitness or Health club membership"
+  },
+  {
+    "pattern": "cine",
+    "category": "Entertainment & Media",
+    "subcategory": "Entertainment"
+  },
+  {
+    "pattern": "sesc",
+    "category": "Dining",
+    "subcategory": "Cafes"
+  },
+  {
+    "pattern": "sesc",
+    "category": "Dining",
+    "subcategory": "Cafes"
+  },
+  {
+    "pattern": "bell",
+    "category": "Education",
+    "subcategory": "Piano"
+  },
+  {
+    "pattern": "(?i)bell",
+    "category": "Education",
+    "subcategory": "Piano"
+  },
+  {
+    "pattern": "(?i)geometric dreams",
+    "category": "Income",
+    "subcategory": "Paycheck"
+  },
+  {
+    "pattern": "(?i)andrei",
+    "category": "Income",
+    "subcategory": "Reimbursements"
+  },
+  {
+    "pattern": "(?i)investimento",
+    "category": "Income",
+    "subcategory": "Investment Returns"
+  }
+]

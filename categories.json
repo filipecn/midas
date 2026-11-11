@@ -1,0 +1,246 @@
+[
+  {
+    "name": "Uncategorized Group",   
+    "type": "expense",
+    "frequency": "variable",
+    "description": "Transactions that have not been categorized yet.", 
+    "color": "#94A3B8", 
+    "subcategories": [{"name" : "Uncategorized", "frequency": "variable"}]
+  },
+  {
+    "name": "Home & Utilities",
+    "type": "expense",
+    "frequency": "variable",
+    "description": "Includes rent, mortgage, utilities, phone, cable, maintenance, and home improvement.",
+    "color": "#4F81BD",
+    "subcategories": [
+      { "name" : "Rent", "frequency": "fixed"},
+      { "name" : "Home Improvement", "frequency": "variable"},
+      { "name" : "Home Maintenance", "frequency": "variable"},
+      { "name" : "Mortgages", "frequency": "variable"},
+      { "name" : "Furnitures", "frequency": "variable"},
+      { "name" : "Utilities", "frequency": "variable"},
+      { "name" : "Internet", "frequency": "variable"},
+      { "name" : "Gas", "frequency": "variable"},
+      { "name" : "Water", "frequency": "variable"},
+      { "name" : "Electricity", "frequency": "variable"},
+      { "name" : "Telephone", "frequency": "variable"}
+    ]
+  },
+  {
+    "name": "Transportation",
+    "type": "expense",
+    "frequency": "variable",
+    "description": "Includes car payments, gas, public transportation, and other auto expenses.",
+    "color": "#E67E22",
+    "subcategories": [
+      { "name" : "Gasoline/Fuel", "frequency": "variable"},
+      { "name" : "Automotive Expenses", "frequency": "variable"},
+      { "name" : "Car Payments", "frequency": "variable"},
+      { "name" : "Public Transportation", "frequency": "variable"},
+      { "name" : "Bike", "frequency": "variable"},
+      { "name" : "Private Transportation", "frequency": "variable"}
+    ]
+  },
+  {
+    "name": "Groceries",
+    "type": "expense",
+    "frequency": "variable",
+    "description": "Includes food. It does not include restaurants or coffee shops.",
+    "color": "#2E8B57",
+    "subcategories": [
+      { "name" : "Market", "frequency": "fixed", "description": "Includes groceries, food, and beverages."},
+      { "name" : "Food & Beverages", "frequency": "variable", "description": "Includes groceries, food, and beverages."}
+    ]
+  },
+  {
+    "name": "Personal & Family Care",
+    "type": "expense",
+    "frequency": "variable",
+    "description": "Includes personal care, pet care, and child care.",
+    "color": "#D16D8A",
+    "subcategories": [
+      { "name" : "Child/Dependent Expenses", "frequency": "variable"},
+      { "name" : "Personal Care", "frequency": "variable"},
+      { "name" : "Family Care", "frequency": "variable"},
+      { "name" : "Pets/Pet Care", "frequency": "variable"}
+    ]
+  },
+  {
+    "name": "Health",
+    "type": "expense",
+    "frequency": "variable",
+    "description": "Includes insurance, doctor visits, medical expenses and fitness or health club dues.",
+    "color": "#C94C4C",
+    "subcategories": [
+      { "name" : "Pharmacy", "frequency": "variable"},
+      { "name" : "Therapy", "frequency": "fixed"},
+      { "name" : "Healthcare/Medical", "frequency": "variable"},
+      { "name" : "Fitness or Health club membership", "frequency": "variable"},
+      { "name" : "Health Insurance", "frequency": "variable"}
+    ]
+  },
+  {
+    "name": "Insurance",
+    "type": "expense",
+    "frequency": "variable",
+    "description": "Includes home, auto, renters, personal property and life insurance payments.",
+    "color": "#2A9D8F",
+    "subcategories": [
+      { "name" : "Home Insurance", "frequency": "variable"},
+      { "name" : "Life Insurance", "frequency": "variable"},
+      { "name" : "Auto Insurance", "frequency": "variable"}
+    ]
+  },
+  {
+    "name": "Dining",
+    "type": "expense",
+    "frequency": "variable",
+    "description": "Includes restaurants, coffee shops, and fast food.",
+    "color": "#E76F51",
+    "subcategories": [
+      { "name" : "Restaurants", "frequency": "variable"},
+      { "name" : "Coffee Shops", "frequency": "variable"},
+      { "name" : "Fast Food", "frequency": "variable"},
+      { "name" : "Bars & Nightlife", "frequency": "variable"},
+      { "name" : "Cafes", "frequency": "variable"},
+      { "name" : "Bakery", "frequency": "variable"},
+      { "name" : "Takeout/Delivery", "frequency": "variable"}
+    ]
+  },
+  {
+    "name": "Shopping",
+    "type": "expense",
+    "frequency": "variable",
+    "description": "Includes clothing, electronics, houseware, general merchandise, and gifts.",
+    "color": "#8E6BBE",
+    "subcategories": [
+      { "name": "Clothing/Shoes", "frequency": "variable" },
+      { "name": "Electronics", "frequency": "variable" },
+      { "name": "Houseware", "frequency": "variable" },
+      { "name": "General Merchandise", "frequency": "variable" },
+      { "name": "Gifts", "frequency": "variable" }
+    ]
+  },
+  {
+    "name": "Entertainment & Media",
+    "type": "expense",
+    "frequency": "variable",
+    "description": "Includes hobbies, entertainment events, books, and digital subscriptions.",
+    "color": "#6366F1",
+    "subcategories": [
+      { "name": "Hobbies", "frequency": "variable" },
+      { "name": "Entertainment", "frequency": "variable" },
+      { "name": "Bookstore", "frequency": "variable" },
+      { "name": "Digital services", "frequency": "variable" },
+      { "name": "Subscriptions", "frequency": "variable" }
+    ]
+  },
+  {
+    "name": "Travel",
+    "type": "expense",
+    "frequency": "variable",
+    "description": "Includes flights, hotels, and car rentals.",
+    "color": "#3A86B8",
+    "subcategories": [
+      { "name" : "Flights", "frequency": "variable"},
+      { "name" : "Accommodation", "frequency": "variable"},
+      { "name" : "Car Rentals", "frequency": "variable"}
+    ]
+  },
+  {
+    "name": "Cash, Checks & Misc",
+    "type": "expense",
+    "frequency": "variable",
+    "description": "Includes ATM withdrawals, checks and other expenses.",
+    "color": "#B8860B",
+    "subcategories": [
+      { "name" : "ATM/Cash Withdrawals", "frequency": "variable"},
+      { "name" : "Checks", "frequency": "variable"},
+      { "name" : "Other Bills", "frequency": "variable"},
+      { "name" : "Other Expenses", "frequency": "variable"}
+    ]
+  },
+  {
+    "name": "Giving",
+    "type": "expense",
+    "frequency": "variable",
+    "description": "Includes charitable giving.",
+    "color": "#7B61A8",
+    "subcategories": [
+      { "name" : "Charity", "frequency": "variable"}
+    ]
+  },
+  {
+    "name": "Business Expenses",
+    "type": "expense",
+    "frequency": "variable",
+    "description": "Includes office maintenance, supplies, postage, printing, dues, and other business expenses.",
+    "color": "#577590",
+    "subcategories": [
+      { "name" : "Business Miscellaneous", "frequency": "variable"},
+      { "name" : "Dues & Subscriptions", "frequency": "variable"},
+      { "name" : "Office Maintenance", "frequency": "variable"},
+      { "name" : "Office Supplies", "frequency": "variable"},
+      { "name" : "Postage & Shipping", "frequency": "variable"},
+      { "name" : "Printing", "frequency": "variable"}
+    ]
+  },
+  { "name": "Education", "type": "expense", "frequency": "variable",
+    "description": "Includes tuition, online courses, campus bookstores, and student loans.",
+    "color": "#5E60CE",
+    "subcategories": [
+      { "name" : "Tuition", "frequency": "variable"},
+      { "name" : "Online Courses", "frequency": "variable"},
+      { "name" : "Research", "frequency": "variable"},
+      { "name" : "Piano", "frequency": "fixed"}
+    ]
+  },
+{
+    "name": "Finance",
+    "type": "expense",
+    "frequency": "variable",
+    "description": "Includes bank fees, taxes, loan interest, and financial service charges.",
+    "color": "#D97706",
+    "subcategories": [
+      { "name": "Service Charges/Fees", "frequency": "variable" },
+      { "name": "Tax on financial operations", "frequency": "variable" },
+      { "name": "Taxes", "frequency": "variable" },
+      { "name": "Investment Account Fees/Charges", "frequency": "variable" },
+      { "name": "Loans & Interest", "frequency": "variable" }
+    ]
+  },
+  {
+    "name": "Transfers & Capital",
+    "type": "transfer",
+    "frequency": "variable",
+    "description": "Includes internal account transfers, credit card bill payments, savings allocations, and investments.",
+    "color": "#64748B",
+    "subcategories": [
+      { "name": "Internal Transfers", "frequency": "variable" },
+      { "name": "Credit Card Payments", "frequency": "variable" },
+      { "name": "Savings", "frequency": "variable" },
+      { "name": "Investment", "frequency": "variable" }
+    ]
+  },
+  {
+    "name": "Income",
+    "type": "income",
+    "frequency": "variable",
+    "description": "Includes paychecks, bonus, reibursements",
+    "color": "#198754",
+    "subcategories": [
+      { "name" : "Paycheck", "frequency": "fixed"},
+      { "name" : "Bonus", "frequency": "variable"},
+      { "name" : "Interest", "frequency": "variable"},
+      { "name" : "Allowances", "frequency": "variable"},
+      { "name" : "Reimbursements", "frequency": "variable"},
+      { "name" : "Dividends", "frequency": "variable"},
+      { "name" : "Sales", "frequency": "variable"},
+      { "name" : "Side Hustles", "frequency": "variable"},
+      { "name" : "Other Income", "frequency": "variable"},
+      { "name" : "Gifts", "frequency": "variable"},
+      { "name" : "Investment Returns", "frequency": "variable"}
+    ]
+  }
+]
