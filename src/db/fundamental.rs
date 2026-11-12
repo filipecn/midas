@@ -1,6 +1,6 @@
 use rusqlite::Connection;
 
-use crate::{db::DB, fundamentus::StockDetails};
+use crate::{db::DB, investing::StockDetails};
 
 pub struct Stocks;
 

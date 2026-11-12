@@ -1,4 +1,4 @@
-use crate::market::types::TechnicalAnalysisRequest;
+use crate::investing::types::TechnicalAnalysisRequest;
 use market_data::{
     EnhancedMarketSeries, Finnhub, Interval, MarketClient, MarketSeries, Twelvedata, YahooFin,
     YahooRange,

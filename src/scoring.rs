@@ -4,7 +4,7 @@ use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::fundamentus::{StockDetails, StockSummary};
+use crate::investing::{StockDetails, StockSummary};
 
 const WEIGHT_TOLERANCE: f64 = 1e-8;
 

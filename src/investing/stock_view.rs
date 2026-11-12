@@ -8,7 +8,7 @@ use ratatui::{
     widgets::{Block, Borders, Cell, Paragraph, Row, Table},
 };
 
-use crate::fundamentus::StockDetails;
+use crate::investing::StockDetails;
 
 pub struct FundamentusWidget<'a> {
     stock: &'a StockDetails,

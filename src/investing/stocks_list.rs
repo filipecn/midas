@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::{
-    fundamentus::StockSummary,
+    investing::StockSummary,
     widgets::list::{GenericList, ListColumn},
 };
 

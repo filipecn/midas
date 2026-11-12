@@ -10,7 +10,7 @@ use std::sync::OnceLock;
 use tokio_util::sync::CancellationToken;
 
 use crate::core::FetchState;
-use crate::fundamentus::StockDetails;
+use crate::investing::StockDetails;
 
 pub static FUNDAMENTUS: OnceLock<std::sync::Mutex<Fundamentus>> = OnceLock::new();
 static FUNDAMENTUS_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();

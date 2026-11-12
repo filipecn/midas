@@ -2,7 +2,7 @@ use market_data::EnhancedMarketSeries;
 use moka::sync::Cache;
 use std::{error::Error, sync::Arc, time::Duration};
 
-use crate::market::{publisher::MultiPublisherClient, types::TechnicalAnalysisRequest};
+use crate::investing::{publisher::MultiPublisherClient, types::TechnicalAnalysisRequest};
 
 fn generate_cache_key(req: &TechnicalAnalysisRequest) -> String {
     format!(

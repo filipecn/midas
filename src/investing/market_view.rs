@@ -13,10 +13,10 @@ use ratatui::{
 use ratatui_interact::components::{Spinner, SpinnerFrames, SpinnerState, SpinnerStyle};
 
 use crate::{
-    fundamentus::{
+    investing::{
         StockDetails,
     },
-    market::{HistoryState, MarketData, TechnicalAnalysisRequest},
+    investing::{HistoryState, MarketData, TechnicalAnalysisRequest},
     source_data::fundamentus::{self as fetcher, StockDetailsState},
     widgets::{
         ActionResult, InteractableWidget,
@@ -126,7 +126,7 @@ impl MarketView {
                     .as_ref()
                     .is_some_and(|window| !window.fundamentus_loaded);
                 if should_store {
-                    if let Err(error) = crate::db::fundamentus::Stocks::write_stock_to_db(&details)
+                    if let Err(error) = crate::db::fundamental::Stocks::write_stock_to_db(&details)
                     {
                         log::error!(
                             target: "midas",
@@ -192,7 +192,7 @@ impl MarketView {
     }
 
     fn load_saved_stocks(&mut self) {
-        match crate::db::fundamentus::Stocks::read_all() {
+        match crate::db::fundamental::Stocks::read_all() {
             Ok(stocks) => {
                 self.all_stocks = stocks
                     .into_iter()
@@ -544,7 +544,7 @@ impl MarketView {
                     .find(|stock| stock.ticker.eq_ignore_ascii_case(&window.ticker))
                     .and_then(|stock| stock.details.as_ref());
                 if let Some(details) = details {
-                    crate::fundamentus::stock_view::FundamentusWidget::new(details)
+                    crate::investing::stock_view::FundamentusWidget::new(details)
                         .render(frame, details_area);
                 } else if let Some(error) = &window.fundamentus_error {
                     frame.render_widget(

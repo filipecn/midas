@@ -1,5 +1,5 @@
 use crate::{
-    fundamentus::{StockDetails, StockSummary},
+    investing::{StockDetails, StockSummary},
     scoring::{self, Category, QarpStrategy, ScoringReport, StockEvaluation, StockFundamentals},
     source_data::fundamentus::{self as fetcher, StockDetailsState},
     widgets::{InteractableWidget, input_box::InputBox, list::GenericList},
@@ -70,7 +70,7 @@ struct BulkLoadStatus {
 
 impl FundamentusView {
     pub fn new() -> Self {
-        let stocks_list = crate::fundamentus::stocks_list::create_stocks_summaries_list(Vec::new());
+        let stocks_list = crate::investing::stocks_list::create_stocks_summaries_list(Vec::new());
         let mut ticker_filter = InputBox::new("Ticker");
         ticker_filter.state.focused = true;
         fetcher::Fundamentus::fetch_tickers();
@@ -139,7 +139,7 @@ impl FundamentusView {
                 Some(StockDetailsState::Loaded(details)) => {
                     if !matches!(window.content, DetailsContent::Loaded { .. }) {
                         if let Err(error) =
-                            crate::db::fundamentus::Stocks::write_stock_to_db(&details)
+                            crate::db::fundamental::Stocks::write_stock_to_db(&details)
                         {
                             log::error!(target: "midas", "Failed to save stock details for {}: {error}", details.ticker);
                         }
@@ -198,7 +198,7 @@ impl FundamentusView {
                         } => {
                             let (saved, failed_ticker, loaded_sector) = match result {
                                 Ok(details) => {
-                                    match crate::db::fundamentus::Stocks::write_stock_to_db(
+                                    match crate::db::fundamental::Stocks::write_stock_to_db(
                                         &details,
                                     ) {
                                         Ok(_) => {
@@ -329,7 +329,7 @@ impl FundamentusView {
     }
 
     fn load_detail_snapshots(&mut self, tickers: &[String]) {
-        match crate::db::fundamentus::Stocks::read_all() {
+        match crate::db::fundamental::Stocks::read_all() {
             Ok(stocks) => {
                 self.detail_snapshots = stocks
                     .into_iter()
@@ -418,7 +418,7 @@ impl FundamentusView {
             summaries
         };
         let mut stocks_list =
-            crate::fundamentus::stocks_list::create_stocks_summaries_list(summaries);
+            crate::investing::stocks_list::create_stocks_summaries_list(summaries);
         stocks_list.state.selected_index = restored_selection_index(
             &stocks_list.rows,
             selected_ticker.as_deref(),
@@ -481,7 +481,7 @@ impl FundamentusView {
     }
 
     fn load_saved_sectors(&mut self) {
-        match crate::db::fundamentus::Stocks::read_all() {
+        match crate::db::fundamental::Stocks::read_all() {
             Ok(stocks) => {
                 self.sector_by_ticker = stocks
                     .iter()
@@ -978,7 +978,7 @@ impl InteractableWidget for FundamentusView {
                     .constraints([Constraint::Length(5), Constraint::Min(0)])
                     .areas(content_area);
                 render_stock_score(score, score_area, frame);
-                crate::fundamentus::stock_view::FundamentusWidget::new(details)
+                crate::investing::stock_view::FundamentusWidget::new(details)
                     .render(frame, details_area);
             }
 

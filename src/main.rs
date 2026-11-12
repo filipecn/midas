@@ -26,9 +26,8 @@ mod b3_eligibility;
 mod budget;
 mod core;
 mod db;
-mod fundamentus;
 mod investments;
-mod market;
+mod investing;
 mod source_data;
 mod scoring;
 mod tui;
@@ -42,16 +41,16 @@ use crate::{
     db::budget::Transactions,
     source_data::fundamentus::{FUNDAMENTUS, Fundamentus},
     db::investments::Investments,
-    market::{MARKET_DATA, MarketData},
+    investing::{MARKET_DATA, MarketData},
     tui::TUI,
 };
 use crate::{
     budget::{expense_groups_view::ExpenseGroupsView, transactions_view::TransactionsView},
-    fundamentus::view::FundamentusView,
+    investing::fundamental_view::FundamentusView,
     investments::{
         investment_transactions_view::InvestmentTransactionsView, investments_view::InvestmentsView,
     },
-    market::view::MarketView,
+    investing::market_view::MarketView,
     source_data::pluggy::{PLUGGY, PluggyError},
     widgets::{InteractableWidget, logger::LoggerWidget},
 };
@@ -467,7 +466,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     if args.score || args.eligibility || args.b3_snapshot.is_some() {
         let db = DBConnection::new(&args.db)?;
-        db::fundamentus::init(&db.conn)?;
+        db::fundamental::init(&db.conn)?;
         b3_eligibility::init(&db.conn)?;
         if let Some(path) = &args.b3_snapshot {
             let snapshot = b3_eligibility::parse_snapshot(&std::fs::read_to_string(path)?)?;
@@ -480,7 +479,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if args.eligibility || args.score_eligibility.is_some() {
-            let details = db::fundamentus::Stocks::read_all_from(&db.conn)?;
+            let details = db::fundamental::Stocks::read_all_from(&db.conn)?;
             let tickers = details
                 .iter()
                 .map(|stock| stock.ticker.clone())
@@ -531,7 +530,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         if args.score {
-            let details = db::fundamentus::Stocks::read_all_from(&db.conn)?;
+            let details = db::fundamental::Stocks::read_all_from(&db.conn)?;
             let stocks = details
                 .iter()
                 .map(scoring::StockFundamentals::from)
@@ -561,7 +560,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     CategorizationRules::load(&args.rules)?;
 
     let db = DBConnection::new(&args.db)?;
-    db::fundamentus::init(&db.conn)?;
+    db::fundamental::init(&db.conn)?;
     b3_eligibility::init(&db.conn)?;
     if let Err(_) = DB.set(Mutex::new(db)) {
         eprintln!("Failed to create/load database");

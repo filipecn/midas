@@ -13,7 +13,7 @@ use crate::widgets::{
 };
 use crate::{
     source_data::fundamentus::Fundamentus,
-    market::{HistoryState, MarketData, TechnicalAnalysisRequest},
+    investing::{HistoryState, MarketData, TechnicalAnalysisRequest},
     widgets::ActionResult,
 };
 
