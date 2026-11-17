@@ -1,4 +1,5 @@
 pub mod client;
+pub mod cvm;
 pub mod publisher;
 pub mod ta_view;
 pub mod types;
@@ -226,4 +227,3 @@ pub struct StockSummary {
     pub qarp_rank: Option<usize>,
     pub qarp_eligible: Option<bool>,
 }
-

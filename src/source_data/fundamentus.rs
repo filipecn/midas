@@ -12,6 +12,159 @@ use tokio_util::sync::CancellationToken;
 use crate::core::FetchState;
 use crate::investing::StockDetails;
 
+#[derive(Debug, Clone, Default)]
+pub struct FundamentusFiiData {
+    pub ticker: String,
+    pub name: String,
+    pub overview: Vec<(String, String)>,
+    pub indicators: Vec<(String, String)>,
+    pub results_12m: Vec<(String, String)>,
+    pub results_3m: Vec<(String, String)>,
+    pub balance: Vec<(String, String)>,
+    pub assets: Vec<(String, String)>,
+}
+
+/// Fetch and parse the FII-specific Fundamentus details page.
+pub fn fetch_fii_fundamentals(ticker: &str) -> Result<FundamentusFiiData, String> {
+    let url = format!(
+        "https://www.fundamentus.com.br/detalhes.php?papel={}",
+        ticker.to_ascii_uppercase()
+    );
+    let response = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36")
+        .build().map_err(|error| error.to_string())?
+        .get(url).send().map_err(|error| error.to_string())?
+        .error_for_status().map_err(|error| error.to_string())?;
+    let bytes = response.bytes().map_err(|error| error.to_string())?;
+    let (html, _, _) = WINDOWS_1252.decode(&bytes);
+    parse_fii_fundamentals(ticker, &html)
+}
+
+fn parse_fii_fundamentals(ticker: &str, html: &str) -> Result<FundamentusFiiData, String> {
+    let document = Html::parse_document(html);
+    let tr = Selector::parse("tr").expect("valid row selector");
+    let td = Selector::parse("td").expect("valid cell selector");
+    let mut values: HashMap<String, Vec<String>> = HashMap::new();
+    for row in document.select(&tr) {
+        let cells = row
+            .select(&td)
+            .map(|cell| {
+                cell.text()
+                    .collect::<String>()
+                    .trim()
+                    .trim_start_matches('?')
+                    .trim()
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+        let mut index = 0;
+        while index + 1 < cells.len() {
+            let label = normalize_fii_label(&cells[index]);
+            let value = cells[index + 1].trim().to_owned();
+            if !label.is_empty() && !value.is_empty() {
+                values.entry(label).or_default().push(value);
+            }
+            index += 2;
+        }
+    }
+    let get = |label: &str, index: usize| {
+        values
+            .get(&normalize_fii_label(label))
+            .and_then(|entries| entries.get(index))
+            .cloned()
+            .unwrap_or_else(|| "-".into())
+    };
+    if get("FII", 0) == "-" {
+        return Err(format!(
+            "Fundamentus did not return FII data for {}",
+            ticker.to_ascii_uppercase()
+        ));
+    }
+    let pairs = |fields: &[(&str, &str)]| {
+        fields
+            .iter()
+            .map(|(label, key)| ((*label).to_owned(), get(key, 0)))
+            .collect::<Vec<_>>()
+    };
+    Ok(FundamentusFiiData {
+        ticker: ticker.to_ascii_uppercase(),
+        name: get("Nome", 0),
+        overview: pairs(&[
+            ("Quote", "Cotação"),
+            ("Last quote date", "Data últ cot"),
+            ("Mandate", "Mandato"),
+            ("Segment", "Segmento"),
+            ("Management", "Gestão"),
+            ("Market value", "Valor de mercado"),
+            ("52 week low", "Min 52 sem"),
+            ("52 week high", "Max 52 sem"),
+            ("Average volume (2m)", "Vol $ méd (2m)"),
+            ("Units", "Nro. Cotas"),
+            ("Report date", "Relatório"),
+            ("Latest quarterly info", "Últ Info Trimestral"),
+        ]),
+        indicators: pairs(&[
+            ("FFO Yield", "FFO Yield"),
+            ("FFO per unit", "FFO/Cota"),
+            ("Dividend yield", "Div. Yield"),
+            ("Dividend per unit", "Dividendo/cota"),
+            ("Price / NAV", "P/VP"),
+            ("NAV per unit", "VP/Cota"),
+        ]),
+        results_12m: [
+            ("Revenue", "Receita"),
+            ("Asset sales", "Venda de ativos"),
+            ("FFO", "FFO"),
+            ("Distributed", "Rend. Distribuído"),
+        ]
+        .iter()
+        .map(|(label, key)| ((*label).to_owned(), get(key, 0)))
+        .collect(),
+        results_3m: [
+            ("Revenue", "Receita"),
+            ("Asset sales", "Venda de ativos"),
+            ("FFO", "FFO"),
+            ("Distributed", "Rend. Distribuído"),
+        ]
+        .iter()
+        .map(|(label, key)| ((*label).to_owned(), get(key, 1)))
+        .collect(),
+        balance: pairs(&[("Assets", "Ativos"), ("Net assets", "Patrim Líquido")]),
+        assets: pairs(&[
+            ("Property count", "Qtd imóveis"),
+            ("Area (m²)", "Área (m2)"),
+            ("Cap rate", "Cap Rate"),
+            ("Unit count", "Qtd Unidades"),
+            ("Rent per m²", "Aluguel/m2"),
+            ("Average vacancy", "Vacância Média"),
+            ("Properties / FII NAV", "Imóveis/PL do FII"),
+            ("Price per m²", "Preço do m2"),
+        ]),
+    })
+}
+
+fn normalize_fii_label(value: &str) -> String {
+    value
+        .chars()
+        .filter_map(|character| match character {
+            '\u{00e1}' | '\u{00e0}' | '\u{00e2}' | '\u{00e3}' | '\u{00e4}' | '\u{00c1}'
+            | '\u{00c0}' | '\u{00c2}' | '\u{00c3}' | '\u{00c4}' => Some('a'),
+            '\u{00e9}' | '\u{00e8}' | '\u{00ea}' | '\u{00eb}' | '\u{00c9}' | '\u{00c8}'
+            | '\u{00ca}' | '\u{00cb}' => Some('e'),
+            '\u{00ed}' | '\u{00ec}' | '\u{00ee}' | '\u{00ef}' | '\u{00cd}' | '\u{00cc}'
+            | '\u{00ce}' | '\u{00cf}' => Some('i'),
+            '\u{00f3}' | '\u{00f2}' | '\u{00f4}' | '\u{00f5}' | '\u{00f6}' | '\u{00d3}'
+            | '\u{00d2}' | '\u{00d4}' | '\u{00d5}' | '\u{00d6}' => Some('o'),
+            '\u{00fa}' | '\u{00f9}' | '\u{00fb}' | '\u{00fc}' | '\u{00da}' | '\u{00d9}'
+            | '\u{00db}' | '\u{00dc}' => Some('u'),
+            '\u{00e7}' | '\u{00c7}' => Some('c'),
+            other if other.is_ascii_alphanumeric() => Some(other.to_ascii_lowercase()),
+            _ => None,
+        })
+        .collect()
+}
+
 pub static FUNDAMENTUS: OnceLock<std::sync::Mutex<Fundamentus>> = OnceLock::new();
 static FUNDAMENTUS_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
 
@@ -85,7 +238,7 @@ pub struct Fundamentus {
 
     pub action_tx: tokio::sync::mpsc::UnboundedSender<Action>,
     pub action_rx: tokio::sync::mpsc::UnboundedReceiver<Action>,
-    pub fetcher: FundamentusFetcher,
+    pub(crate) fetcher: FundamentusFetcher,
 }
 
 impl Fundamentus {

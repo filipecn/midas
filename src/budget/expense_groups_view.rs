@@ -11,15 +11,15 @@ use ratatui::{
 };
 use ratatui_interact::state::FocusManager;
 
+use crate::db::budget::Transactions;
 use crate::{
     budget::{
-        data::Categories, expense_group_tree::ExpenseGroupTree,
-        transactions_list::TransactionsList, Transaction,
+        Transaction, data::Categories, expense_group_tree::ExpenseGroupTree,
+        transactions_list::TransactionsList,
     },
     tui::TUI,
     widgets::InteractableWidget,
 };
-use crate::db::budget::Transactions;
 
 /// Which panel is focused
 #[derive(Clone, Eq, PartialEq, Hash)]
@@ -344,7 +344,7 @@ impl ExpenseGroupsView {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_budget_spent_percentage, ExpenseGroupsView, MonthData};
+    use super::{ExpenseGroupsView, MonthData, format_budget_spent_percentage};
     use crate::budget::{Category, Transaction};
     use std::collections::HashMap;
 
@@ -524,14 +524,18 @@ impl InteractableWidget for ExpenseGroupsView {
             .current_month_data()
             .and_then(|month_data| month_data.amounts.get("Transfers & Capital").copied())
             .unwrap_or(0);
-        let [transfers_area, totals_header_area, variable_totals_area, fixed_totals_area] =
-            Layout::vertical([
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Min(1),
-            ])
-            .areas(totals_area);
+        let [
+            transfers_area,
+            totals_header_area,
+            variable_totals_area,
+            fixed_totals_area,
+        ] = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(1),
+        ])
+        .areas(totals_area);
         let transfers_line = Line::from(vec![
             Span::styled(
                 format!("{:>14}: ", "Transfers"),

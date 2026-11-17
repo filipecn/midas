@@ -7,11 +7,11 @@ use ratatui::{
 };
 use std::collections::{BTreeMap, HashMap};
 
+use crate::db::investments::Investments as InvestmentDatabase;
 use crate::{
     investments::{
         Investment, InvestmentTransaction, InvestmentTransactionType,
-        investments_list::InvestmentsList,
-        investments_tree::InvestmentsTree,
+        investments_list::InvestmentsList, investments_tree::InvestmentsTree,
     },
     tui::TUI,
     widgets::{
@@ -20,7 +20,6 @@ use crate::{
         list::{GenericList, ListColumn},
     },
 };
-use crate::db::investments::Investments as InvestmentDatabase;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum InvestmentFocus {

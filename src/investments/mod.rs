@@ -1,11 +1,13 @@
 use chrono::{DateTime, Utc};
 use std::fmt;
 
+pub mod fii_view;
 pub mod investment_transactions_list;
 pub mod investment_transactions_view;
 pub mod investments_list;
 pub mod investments_tree;
 pub mod investments_view;
+pub mod news_view;
 
 #[derive(Debug, Clone)]
 pub struct Investment {

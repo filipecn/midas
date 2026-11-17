@@ -12,8 +12,8 @@ use crate::widgets::{
     list::{GenericList, ListColumn},
 };
 use crate::{
-    source_data::fundamentus::Fundamentus,
     investing::{HistoryState, MarketData, TechnicalAnalysisRequest},
+    source_data::fundamentus::Fundamentus,
     widgets::ActionResult,
 };
 

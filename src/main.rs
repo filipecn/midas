@@ -26,31 +26,29 @@ mod b3_eligibility;
 mod budget;
 mod core;
 mod db;
-mod investments;
 mod investing;
-mod source_data;
+mod investments;
 mod scoring;
+pub mod source_data;
 mod tui;
 mod widgets;
 use crate::{
-    budget::{
-        data::{Categories, CategorizationRules},
-    },
+    budget::data::{Categories, CategorizationRules},
     core::Accounts,
-    db::{DB, DBConnection},
     db::budget::Transactions,
-    source_data::fundamentus::{FUNDAMENTUS, Fundamentus},
     db::investments::Investments,
+    db::{DB, DBConnection},
     investing::{MARKET_DATA, MarketData},
+    source_data::fundamentus::{FUNDAMENTUS, Fundamentus},
     tui::TUI,
 };
 use crate::{
     budget::{expense_groups_view::ExpenseGroupsView, transactions_view::TransactionsView},
     investing::fundamental_view::FundamentusView,
+    investing::market_view::MarketView,
     investments::{
         investment_transactions_view::InvestmentTransactionsView, investments_view::InvestmentsView,
     },
-    investing::market_view::MarketView,
     source_data::pluggy::{PLUGGY, PluggyError},
     widgets::{InteractableWidget, logger::LoggerWidget},
 };
@@ -62,6 +60,8 @@ enum ActiveView {
     ExpenseGroups,
     Fundamentus,
     Market,
+    News,
+    Fii,
 }
 
 struct App {
@@ -94,6 +94,8 @@ impl App {
                 "expense_groups" => self.active_view = ActiveView::ExpenseGroups,
                 "fundamentus" => self.active_view = ActiveView::Fundamentus,
                 "market" => self.active_view = ActiveView::Market,
+                "news" => self.active_view = ActiveView::News,
+                "fii" => self.active_view = ActiveView::Fii,
                 _ => {}
             },
             _ => {}
@@ -110,8 +112,12 @@ fn create_menus() -> Vec<Menu> {
         Menu::new("Investments").items(vec![
             MenuBarItem::action("investments", "Investments"),
             MenuBarItem::action("investment_transactions", "Investment Transactions"),
+        ]),
+        Menu::new("Investing").items(vec![
             MenuBarItem::action("fundamentus", "Fundamentus"),
             MenuBarItem::action("market", "Market"),
+            MenuBarItem::action("news", "News"),
+            MenuBarItem::action("fii", "FII"),
         ]),
     ]
 }
@@ -199,6 +205,8 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
         InvestmentTransactionsView::new(investments, investment_transactions);
     let mut fundamentus_view = FundamentusView::new();
     let mut market_view = MarketView::new();
+    let mut news_view = investments::news_view::NewsView::new();
+    let mut fii_view = investments::fii_view::FiiView::new();
     let now = Local::now();
     let mut expense_groups = ExpenseGroupsView::new(now.year() as u32, now.month())?;
     let menus = create_menus();
@@ -218,6 +226,8 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
                 &expense_groups,
                 &fundamentus_view,
                 &market_view,
+                &news_view,
+                &fii_view,
             );
             if logger_open {
                 let log_area = f.area().inner(ratatui::layout::Margin {
@@ -232,6 +242,8 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
         fundamentus_view.update();
         MarketData::update();
         market_view.update();
+        news_view.update();
+        fii_view.update();
 
         if !event::poll(Duration::from_millis(100))? {
             continue;
@@ -269,6 +281,11 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
                     {
                         continue;
                     }
+                    if matches!(&app.active_view, ActiveView::Fii)
+                        && fii_view.close_details_window()
+                    {
+                        continue;
+                    }
                     break;
                 }
                 let action_result = match app.active_view {
@@ -280,6 +297,8 @@ fn run_tui() -> Result<(), Box<dyn Error>> {
                     ActiveView::ExpenseGroups => expense_groups.handle_key(&key),
                     ActiveView::Fundamentus => fundamentus_view.handle_key(&key),
                     ActiveView::Market => market_view.handle_key(&key),
+                    ActiveView::News => news_view.handle_key(&key),
+                    ActiveView::Fii => fii_view.handle_key(&key),
                 };
                 if !action_result.consumed() {
                     if key.code == KeyCode::Char('v') {
@@ -329,6 +348,8 @@ fn render_app(
     expense_groups: &ExpenseGroupsView,
     fundamentus_view: &FundamentusView,
     market_view: &MarketView,
+    news_view: &investments::news_view::NewsView,
+    fii_view: &investments::fii_view::FiiView,
 ) {
     let menu_height = calculate_menu_bar_height();
     let [menu_area, content_area] = Layout::default()
@@ -345,6 +366,8 @@ fn render_app(
         ActiveView::ExpenseGroups => expense_groups.render(content_area, frame),
         ActiveView::Fundamentus => fundamentus_view.render(content_area, frame),
         ActiveView::Market => market_view.render(content_area, frame),
+        ActiveView::News => news_view.render(content_area, frame),
+        ActiveView::Fii => fii_view.render(content_area, frame),
     }
 
     let menu_bar = MenuBar::new(menus, &app.menu_state);

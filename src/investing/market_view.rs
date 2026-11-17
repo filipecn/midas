@@ -1,6 +1,9 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::Arc,
+    sync::{
+        Arc,
+        mpsc::{self, Receiver},
+    },
 };
 
 use market_data::EnhancedMarketSeries;
@@ -13,11 +16,11 @@ use ratatui::{
 use ratatui_interact::components::{Spinner, SpinnerFrames, SpinnerState, SpinnerStyle};
 
 use crate::{
-    investing::{
-        StockDetails,
-    },
+    investing::StockDetails,
     investing::{HistoryState, MarketData, TechnicalAnalysisRequest},
     source_data::fundamentus::{self as fetcher, StockDetailsState},
+    source_data::news::sentiment::{SentimentEngine, SentimentLabel, SentimentScore},
+    source_data::news::{NewsArticle, NewsClient},
     widgets::{
         ActionResult, InteractableWidget,
         input_box::InputBox,
@@ -49,6 +52,8 @@ impl MarketStock {
 enum DetailsTab {
     Technical,
     Fundamentus,
+    MaterialFact,
+    News,
 }
 
 struct DetailsWindow {
@@ -58,6 +63,15 @@ struct DetailsWindow {
     technical_error: Option<String>,
     fundamentus_loaded: bool,
     technical_loaded: bool,
+    material_facts: Option<Vec<crate::source_data::cvm::companies::IpeDocument>>,
+    material_fact_error: Option<String>,
+    material_fact_requested: bool,
+    material_fact_rx:
+        Option<Receiver<Result<Vec<crate::source_data::cvm::companies::IpeDocument>, String>>>,
+    news: Option<Vec<NewsArticle>>,
+    news_error: Option<String>,
+    news_requested: bool,
+    news_rx: Option<Receiver<Result<Vec<NewsArticle>, String>>>,
     spinner_state: SpinnerState,
 }
 
@@ -72,6 +86,7 @@ pub struct MarketView {
     sector_panel_focused: bool,
     status_message: String,
     details_window: Option<DetailsWindow>,
+    sentiment_engine: SentimentEngine,
 }
 
 impl MarketView {
@@ -90,6 +105,7 @@ impl MarketView {
             sector_panel_focused: false,
             status_message: String::new(),
             details_window: None,
+            sentiment_engine: SentimentEngine::default(),
         };
         view.load_saved_stocks();
         view
@@ -185,6 +201,11 @@ impl MarketView {
             self.refresh_sector_options();
             self.refresh_filtered_stocks(None);
         }
+
+        self.start_material_fact_load_if_ready();
+        self.poll_material_fact_load();
+        self.start_news_load_if_ready();
+        self.poll_news_load();
     }
 
     pub fn close_details_window(&mut self) -> bool {
@@ -346,6 +367,14 @@ impl MarketView {
             technical_error: None,
             fundamentus_loaded: false,
             technical_loaded: has_series,
+            material_facts: None,
+            material_fact_error: None,
+            material_fact_requested: false,
+            material_fact_rx: None,
+            news: None,
+            news_error: None,
+            news_requested: false,
+            news_rx: None,
             spinner_state: SpinnerState::for_frames(SpinnerFrames::Dots),
         });
 
@@ -368,15 +397,36 @@ impl MarketView {
             window.technical_loaded = false;
             MarketData::fetch_history(create_request(&window.ticker));
         }
+        if window.material_fact_error.is_some() {
+            window.material_fact_error = None;
+            window.material_fact_requested = false;
+        }
+        if window.news_error.is_some() {
+            window.news_error = None;
+            window.news_requested = false;
+        }
     }
 
     fn handle_details_key(&mut self, key: &crossterm::event::KeyEvent) -> ActionResult {
         match key.code {
-            crossterm::event::KeyCode::Tab | crossterm::event::KeyCode::BackTab => {
+            crossterm::event::KeyCode::Tab => {
                 if let Some(window) = &mut self.details_window {
                     window.tab = match window.tab {
                         DetailsTab::Technical => DetailsTab::Fundamentus,
+                        DetailsTab::Fundamentus => DetailsTab::MaterialFact,
+                        DetailsTab::MaterialFact => DetailsTab::News,
+                        DetailsTab::News => DetailsTab::Technical,
+                    };
+                }
+                ActionResult::Consumed
+            }
+            crossterm::event::KeyCode::BackTab => {
+                if let Some(window) = &mut self.details_window {
+                    window.tab = match window.tab {
+                        DetailsTab::Technical => DetailsTab::News,
                         DetailsTab::Fundamentus => DetailsTab::Technical,
+                        DetailsTab::MaterialFact => DetailsTab::Fundamentus,
+                        DetailsTab::News => DetailsTab::MaterialFact,
                     };
                 }
                 ActionResult::Consumed
@@ -386,6 +436,104 @@ impl MarketView {
                 ActionResult::Consumed
             }
             _ => ActionResult::Consumed,
+        }
+    }
+
+    fn start_material_fact_load_if_ready(&mut self) {
+        let Some(window) = self.details_window.as_mut() else {
+            return;
+        };
+        if window.material_fact_requested {
+            return;
+        }
+        let ticker = window.ticker.clone();
+        let (tx, rx) = mpsc::channel();
+        window.material_fact_requested = true;
+        window.material_fact_rx = Some(rx);
+        std::thread::spawn(move || {
+            let result = load_material_facts(&ticker);
+            let _ = tx.send(result);
+        });
+    }
+
+    fn poll_material_fact_load(&mut self) {
+        let Some(window) = self.details_window.as_mut() else {
+            return;
+        };
+        let Some(rx) = window.material_fact_rx.as_ref() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(Ok(rows)) => {
+                window.material_facts = Some(rows);
+                window.material_fact_error = None;
+                window.material_fact_rx = None;
+            }
+            Ok(Err(error)) => {
+                window.material_fact_error = Some(error);
+                window.material_fact_rx = None;
+            }
+            Err(mpsc::TryRecvError::Disconnected) => {
+                window.material_fact_error =
+                    Some("Material fact lookup stopped unexpectedly".into());
+                window.material_fact_rx = None;
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
+        }
+    }
+
+    fn start_news_load_if_ready(&mut self) {
+        let Some(window) = self.details_window.as_mut() else {
+            return;
+        };
+        if window.news_requested {
+            return;
+        }
+        let ticker = window.ticker.clone();
+        let company_name = self
+            .all_stocks
+            .iter()
+            .find(|stock| stock.ticker.eq_ignore_ascii_case(&ticker))
+            .and_then(|stock| stock.details.as_ref())
+            .map(|details| details.nome.clone())
+            .filter(|name| !name.trim().is_empty() && name != "-");
+        let query = match company_name {
+            Some(name) => format!("\"{name}\" OR {ticker}"),
+            None => ticker.clone(),
+        };
+        let (tx, rx) = mpsc::channel();
+        window.news_requested = true;
+        window.news_rx = Some(rx);
+        std::thread::spawn(move || {
+            let result = NewsClient::default()
+                .google_news_search(&query)
+                .map_err(|error| error.to_string());
+            let _ = tx.send(result);
+        });
+    }
+
+    fn poll_news_load(&mut self) {
+        let Some(window) = self.details_window.as_mut() else {
+            return;
+        };
+        let Some(rx) = window.news_rx.as_ref() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(Ok(articles)) => {
+                window.news = Some(articles);
+                window.news_error = None;
+                window.news_rx = None;
+            }
+            Ok(Err(error)) => {
+                window.news_error = Some(error);
+                window.news_rx = None;
+            }
+            Err(mpsc::TryRecvError::Disconnected) => {
+                window.news_error = Some("News lookup stopped unexpectedly".into());
+                window.news_rx = None;
+            }
+            Err(mpsc::TryRecvError::Empty) => {}
         }
     }
 }
@@ -532,6 +680,10 @@ impl MarketView {
             tab_span(" Technical ", window.tab == DetailsTab::Technical),
             Span::raw("  "),
             tab_span(" Fundamentus ", window.tab == DetailsTab::Fundamentus),
+            Span::raw("  "),
+            tab_span(" Material Fact ", window.tab == DetailsTab::MaterialFact),
+            Span::raw("  "),
+            tab_span(" News ", window.tab == DetailsTab::News),
         ]);
         frame.render_widget(Paragraph::new(tabs), tabs_area);
 
@@ -561,7 +713,121 @@ impl MarketView {
                     );
                 }
             }
+            DetailsTab::MaterialFact => self.render_material_facts(window, details_area, frame),
+            DetailsTab::News => self.render_news(window, details_area, frame),
         }
+    }
+
+    fn render_news(&self, window: &DetailsWindow, area: Rect, frame: &mut ratatui::Frame) {
+        if let Some(error) = &window.news_error {
+            frame.render_widget(
+                Paragraph::new(format!("{error} | Press r to retry")).alignment(Alignment::Center),
+                area,
+            );
+            return;
+        }
+        let Some(articles) = &window.news else {
+            render_loading(window, "Searching Google News...", area, frame);
+            return;
+        };
+        if articles.is_empty() {
+            frame.render_widget(
+                Paragraph::new("No news found for this company or ticker.")
+                    .alignment(Alignment::Center),
+                area,
+            );
+            return;
+        }
+        let rows = articles.iter().take(100).map(|article| {
+            let date = article
+                .published
+                .map(|date| date.format("%Y-%m-%d %H:%M UTC").to_string())
+                .unwrap_or_else(|| "Date unknown".into());
+            let link = article.link.as_deref().unwrap_or("");
+            let title = if link.is_empty() {
+                article.title.clone()
+            } else {
+                format!("{}  {link}", article.title)
+            };
+            let sentiment = self.sentiment_engine.classify_article(article);
+            ListItem::new(Line::from(vec![
+                sentiment_icon(sentiment),
+                Span::raw(format!("{date}  {}  {title}", article.source)),
+            ]))
+        });
+        frame.render_widget(
+            List::new(rows).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" Google News "),
+            ),
+            area,
+        );
+    }
+
+    fn render_material_facts(
+        &self,
+        window: &DetailsWindow,
+        area: Rect,
+        frame: &mut ratatui::Frame,
+    ) {
+        if let Some(error) = &window.material_fact_error {
+            frame.render_widget(
+                Paragraph::new(format!("{error} | Press r to retry")).alignment(Alignment::Center),
+                area,
+            );
+            return;
+        }
+        let Some(facts) = &window.material_facts else {
+            render_loading(window, "Loading CVM material facts...", area, frame);
+            return;
+        };
+        if facts.is_empty() {
+            frame.render_widget(
+                Paragraph::new(
+                    "No material facts found for this company in the current year's IPE data.",
+                )
+                .alignment(Alignment::Center),
+                area,
+            );
+            return;
+        }
+        let rows = facts.iter().take(100).map(|fact| {
+            let date = fact
+                .submission_date
+                .or(fact.reference_date)
+                .map(|date| date.format("%Y-%m-%d").to_string())
+                .unwrap_or_else(|| "Date unknown".into());
+            let subject = fact
+                .subject
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .or(fact.species.as_deref())
+                .or(fact.document_type.as_deref())
+                .unwrap_or("Material Fact");
+            let link = if fact
+                .download_url
+                .as_deref()
+                .is_some_and(|url| !url.is_empty())
+            {
+                " [document available]"
+            } else {
+                ""
+            };
+            let sentiment = self.sentiment_engine.classify(subject);
+            ListItem::new(Line::from(vec![
+                sentiment_icon(sentiment),
+                Span::raw(format!("{date}  {subject}{link}")),
+            ]))
+        });
+        frame.render_widget(
+            List::new(rows).block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(" CVM IPE material facts "),
+            ),
+            area,
+        );
     }
 
     fn render_technical_details(
@@ -741,6 +1007,109 @@ fn latest_indicator(
         .unwrap_or_else(|| "-".to_string())
 }
 
+fn load_material_facts(
+    ticker: &str,
+) -> Result<Vec<crate::source_data::cvm::companies::IpeDocument>, String> {
+    use crate::source_data::cvm::{
+        CkanClient, CsvEncoding, CsvOptions, ResourceDownloader,
+        companies::{
+            CompanyDataSource, CompanyDisclosureSource, CorporateDocumentKind, parse_ipe_rows,
+            parse_registration_rows,
+        },
+        extract_zip,
+    };
+    use chrono::Datelike;
+
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_nanos();
+    let dir = std::env::temp_dir().join(format!(
+        "midas-material-facts-{}-{stamp}",
+        std::process::id()
+    ));
+    let result = (|| {
+        let ckan = CkanClient::with_defaults().map_err(|error| error.to_string())?;
+        let downloader = ResourceDownloader::default();
+        let companies = CompanyDataSource::new(&ckan, &downloader);
+        let options = CsvOptions {
+            encoding: CsvEncoding::Windows1252,
+            delimiter: b';',
+            has_headers: true,
+        };
+        let registration = companies
+            .download_registration(dir.join("cad.csv"), false)
+            .map_err(|error| error.to_string())?;
+        let issuer_catalog = crate::source_data::b3::security_catalog()?;
+        let issuer = issuer_catalog
+            .issuer_for_ticker(ticker)
+            .ok_or_else(|| format!("B3 has no issuer mapping for ticker {ticker}"))?;
+        let mut identity = crate::source_data::company::CompanyIdentity::from_b3(issuer);
+        let cvm_code_override = issuer_catalog.cvm_code_override(&issuer.code);
+        let company = parse_registration_rows(
+            std::fs::File::open(registration.path).map_err(|error| error.to_string())?,
+            options,
+        )
+        .filter_map(Result::ok)
+        .find(|company| {
+            if let Some(cvm_code) = cvm_code_override {
+                if company.cvm_code.trim_start_matches('0') == cvm_code {
+                    return true;
+                }
+            }
+            identity.matches_name(&company.legal_name)
+                || company
+                    .trading_name
+                    .as_deref()
+                    .is_some_and(|name| identity.matches_name(name))
+        })
+        .ok_or_else(|| {
+            format!(
+                "Could not match B3 issuer '{}' to a CVM company registration",
+                issuer.name
+            )
+        })?;
+        identity.add_registration(&company);
+        let company_cnpj = identity.cnpj.as_deref().unwrap_or(&company.cnpj).to_owned();
+
+        let year = chrono::Local::now().year();
+        let disclosures = CompanyDisclosureSource::new(&ckan, &downloader);
+        let archive = disclosures
+            .download_ipe(year, dir.join(format!("ipe-{year}.zip")), false)
+            .map_err(|error| error.to_string())?;
+        let extracted =
+            extract_zip(archive.path, dir.join("ipe")).map_err(|error| error.to_string())?;
+        let csv = extracted
+            .files
+            .into_iter()
+            .find(|path| {
+                path.file_name().is_some_and(|name| {
+                    name.to_string_lossy()
+                        .to_ascii_lowercase()
+                        .starts_with("ipe_cia_aberta_")
+                        && name
+                            .to_string_lossy()
+                            .to_ascii_lowercase()
+                            .ends_with(".csv")
+                })
+            })
+            .ok_or_else(|| "IPE archive did not contain its annual CSV".to_string())?;
+        let mut facts = parse_ipe_rows(
+            std::fs::File::open(csv).map_err(|error| error.to_string())?,
+            options,
+        )
+        .filter_map(Result::ok)
+        .filter(|fact| {
+            fact.cnpj == company_cnpj && fact.kind() == CorporateDocumentKind::MaterialFact
+        })
+        .collect::<Vec<_>>();
+        facts.sort_by_key(|fact| std::cmp::Reverse(fact.submission_date.or(fact.reference_date)));
+        Ok(facts)
+    })();
+    let _ = std::fs::remove_dir_all(dir);
+    result
+}
+
 fn render_loading(window: &DetailsWindow, label: &str, area: Rect, frame: &mut ratatui::Frame) {
     let spinner = Spinner::new(&window.spinner_state)
         .style(SpinnerStyle::new(SpinnerFrames::Dots).color(Color::Cyan))
@@ -759,6 +1128,18 @@ fn tab_span(label: &'static str, selected: bool) -> Span<'static> {
     } else {
         Span::raw(label)
     }
+}
+
+fn sentiment_icon(score: SentimentScore) -> Span<'static> {
+    let (icon, color) = match score.label {
+        SentimentLabel::Positive => ("▲ ", Color::Green),
+        SentimentLabel::Neutral => ("● ", Color::Gray),
+        SentimentLabel::Negative => ("▼ ", Color::Red),
+    };
+    Span::styled(
+        icon,
+        Style::default().fg(color).add_modifier(Modifier::BOLD),
+    )
 }
 
 fn create_stocks_list(stocks: Vec<MarketStock>) -> GenericList<MarketStock> {
