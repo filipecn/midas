@@ -25,5 +25,6 @@ impl DBConnection {
 }
 
 pub mod budget;
+pub mod fii;
 pub mod fundamental;
 pub mod investments;

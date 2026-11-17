@@ -169,6 +169,7 @@ impl MarketDataFetcher {
     }
 }
 
+pub mod fii;
 pub mod fundamental_view;
 pub mod market_view;
 pub mod stock_view;

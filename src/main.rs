@@ -490,6 +490,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if args.score || args.eligibility || args.b3_snapshot.is_some() {
         let db = DBConnection::new(&args.db)?;
         db::fundamental::init(&db.conn)?;
+        db::fii::init(&db.conn)?;
         b3_eligibility::init(&db.conn)?;
         if let Some(path) = &args.b3_snapshot {
             let snapshot = b3_eligibility::parse_snapshot(&std::fs::read_to_string(path)?)?;
@@ -584,6 +585,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let db = DBConnection::new(&args.db)?;
     db::fundamental::init(&db.conn)?;
+    db::fii::init(&db.conn)?;
     b3_eligibility::init(&db.conn)?;
     if let Err(_) = DB.set(Mutex::new(db)) {
         eprintln!("Failed to create/load database");
