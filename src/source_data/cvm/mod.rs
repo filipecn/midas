@@ -7,6 +7,7 @@ mod models;
 mod parse;
 
 pub mod companies;
+pub mod fii_reports;
 pub mod funds;
 
 pub use archive::{ExtractedArchive, extract_zip};

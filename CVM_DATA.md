@@ -24,6 +24,21 @@ let resource = cvm.resource(&itr.resources[0].id)?;
 `resource` call `package_show` and `resource_show`; `datastore_search` is
 available for resources that CKAN has imported into DataStore.
 
+## FII periodic reports
+
+`source_data::cvm::fii_reports` discovers FII monthly, quarterly, annual, and
+financial-statement resources from CKAN. `FiiMonthlyArchive` currently parses
+the three annual monthly-report tables (general, assets/liabilities, and
+complement). It retains unknown columns and keeps numeric source cells as
+their original text, so precision and formatting are not lost during parsing.
+
+`FiiReportDataSource::download_snapshot` returns the exact resource's CKAN
+`last_modified` timestamp alongside the download. The monthly ingestion path
+uses that archive snapshot time as `available_at`; row-level `Data_Entrega` is
+retained as reported source data. Since CVM republishes annual archives,
+point-in-time history before MIDAS captures a particular archive revision is
+not available from the current download alone.
+
 ## Download, extract, and parse
 
 ```rust,ignore

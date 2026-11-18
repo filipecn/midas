@@ -63,7 +63,7 @@ impl ResourceParser {
     }
 }
 
-struct EncodingReader<R> {
+pub(super) struct EncodingReader<R> {
     inner: R,
     decoder: encoding_rs::Decoder,
     input: [u8; 8192],
@@ -76,7 +76,7 @@ struct EncodingReader<R> {
 }
 
 impl<R> EncodingReader<R> {
-    fn new(inner: R, encoding: &'static Encoding) -> Self {
+    pub(super) fn new(inner: R, encoding: &'static Encoding) -> Self {
         Self {
             inner,
             decoder: encoding.new_decoder_without_bom_handling(),

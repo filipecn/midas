@@ -2,20 +2,39 @@
 use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct FiiId(pub String);
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Fii {
     pub id: FiiId,
     pub cnpj: Option<String>,
-    pub ticker: String,
+    pub ticker: Option<String>,
     pub name: String,
     pub administrator: Option<String>,
     pub manager: Option<String>,
     pub listed_on: Option<NaiveDate>,
     pub delisted_on: Option<NaiveDate>,
     pub operational_status: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FiiMonthlyMetrics {
+    pub fund: Fii,
+    pub source: String,
+    pub dataset: String,
+    pub reference_date: NaiveDate,
+    pub available_at: DateTime<Utc>,
+    pub ingested_at: DateTime<Utc>,
+    pub filing_version: String,
+    pub reported_mandate: Option<String>,
+    pub reported_segment: Option<String>,
+    pub nav_per_share: Option<f64>,
+    /// Source-reported percentage value; its precise unit convention is not inferred.
+    pub reported_monthly_distribution_yield: Option<f64>,
+    pub price_to_nav: Option<f64>,
+    pub market_price_date: Option<NaiveDate>,
+    pub diagnostics: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,6 +83,8 @@ pub struct Distribution {
     pub reference_period: Option<String>,
     pub source: String,
     pub published_at: Option<DateTime<Utc>>,
+    pub ingested_at: DateTime<Utc>,
+    pub revision_id: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -72,6 +93,8 @@ pub struct MarketObservation {
     pub reference_date: NaiveDate,
     pub available_at: DateTime<Utc>,
     pub ingested_at: DateTime<Utc>,
+    pub source: String,
+    pub revision_id: String,
     pub raw_price: Option<f64>,
     pub adjusted_price: Option<f64>,
     pub trading_volume: Option<f64>,
@@ -111,13 +134,17 @@ pub fn percentile_scores(
     values: &[Option<f64>],
     policy: MissingDataPolicy,
 ) -> Option<Vec<FactorScore>> {
+    let values = values
+        .iter()
+        .map(|value| value.filter(|value| value.is_finite()))
+        .collect::<Vec<_>>();
     if policy == MissingDataPolicy::RequireAll && values.iter().any(Option::is_none) {
         return None;
     }
     let mut valid: Vec<(usize, f64)> = values
         .iter()
         .enumerate()
-        .filter_map(|(i, v)| v.filter(|x| x.is_finite()).map(|x| (i, x)))
+        .filter_map(|(i, v)| v.map(|x| (i, x)))
         .collect();
     if valid.is_empty() {
         return Some(
@@ -178,5 +205,15 @@ mod tests {
     #[test]
     fn require_all_rejects_incomplete_inputs() {
         assert!(percentile_scores(&[Some(1.0), None], MissingDataPolicy::RequireAll).is_none());
+    }
+
+    #[test]
+    fn non_finite_values_are_missing_for_both_policies() {
+        let values = [Some(f64::NAN), Some(f64::INFINITY), Some(2.0)];
+        let skipped = percentile_scores(&values, MissingDataPolicy::Skip).unwrap();
+        assert_eq!(skipped[0].raw, None);
+        assert_eq!(skipped[1].raw, None);
+        assert_eq!(skipped[2].normalized, Some(50.0));
+        assert!(percentile_scores(&values, MissingDataPolicy::RequireAll).is_none());
     }
 }
