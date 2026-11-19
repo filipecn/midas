@@ -18,6 +18,8 @@ const SOURCE: &str = "B3_COTAHIST";
 const BDI_FII: &str = "12";
 const SCHEMA_VERSION: &str = "midas_fii_cotahist_v1";
 const PARSER_VERSION: &str = "rsb3/0.1.0+midas-adapter/1";
+const CVM_PARSER_VERSION: &str = "midas-cvm-adapter-v2";
+const LEGACY_CVM_PARSER_VERSION: &str = "midas-cvm-adapter-v1";
 
 #[derive(Debug, Error)]
 pub enum CotahistError {
@@ -27,6 +29,8 @@ pub enum CotahistError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Database(#[from] rusqlite::Error),
+    #[error("failed to build CVM point-in-time metrics: {0}")]
+    CvmMetrics(String),
     #[error("COTAHIST parser schema is missing or has an incompatible type: {0}")]
     Schema(String),
     #[error("COTAHIST record validation failed: {0}")]
@@ -108,7 +112,9 @@ pub struct CvmReportRecord {
     pub submission_date: Option<String>,
     pub availability_basis: String,
     pub filing_version: String,
+    pub source_revision_id: String,
     pub nav_per_share: Option<f64>,
+    pub nav_method: Option<String>,
     pub reported_monthly_yield: Option<f64>,
     pub aligned_market_date: Option<String>,
     pub aligned_raw_close_brl: Option<f64>,
@@ -205,11 +211,15 @@ pub fn init(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 pub fn normalize_cnpj(raw: &str) -> Result<String, CotahistError> {
-    let digits = raw.chars().filter(char::is_ascii_digit).collect::<String>();
-    if digits.len() != 14 {
+    let normalized = raw
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect::<String>()
+        .to_ascii_uppercase();
+    if normalized.len() != 14 || !normalized.is_ascii() {
         return Err(CotahistError::Validation(format!("invalid CNPJ {raw:?}")));
     }
-    Ok(digits)
+    Ok(normalized)
 }
 
 pub fn save_identity(
@@ -231,39 +241,61 @@ pub fn save_identity(
     } else {
         "configured"
     };
-    let transaction = conn.unchecked_transaction()?;
-    let values = std::iter::once(("cnpj", cnpj.as_str()))
-        .chain(std::iter::once(("isin", isin.as_str())))
-        .chain(input.ticker.as_deref().map(|v| ("ticker", v.trim())));
-    for (kind, value) in values {
-        if value.is_empty() {
-            continue;
+    conn.execute_batch("SAVEPOINT fii_identity_mapping")?;
+    let result = (|| -> rusqlite::Result<()> {
+        let values = std::iter::once(("cnpj", cnpj.as_str()))
+            .chain(std::iter::once(("isin", isin.as_str())))
+            .chain(input.ticker.as_deref().map(|v| ("ticker", v.trim())));
+        for (kind, value) in values {
+            if value.is_empty() {
+                continue;
+            }
+            conn.execute(
+                "INSERT OR IGNORE INTO fii_identity_aliases
+                 (fund_id, identifier_type, identifier_value, valid_from, valid_to, evidence,
+                  first_observed_at, confidence)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    id.0,
+                    kind,
+                    value.to_ascii_uppercase(),
+                    input.valid_from.map(|d| d.to_string()),
+                    input.valid_to.map(|d| d.to_string()),
+                    input.evidence,
+                    observed_at.to_rfc3339(),
+                    confidence,
+                ],
+            )?;
         }
-        transaction.execute(
-            "INSERT OR IGNORE INTO fii_identity_aliases
-             (fund_id, identifier_type, identifier_value, valid_from, valid_to, evidence,
-              first_observed_at, confidence)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        conn.execute(
+            "INSERT OR IGNORE INTO fii_identity_registry
+             (fund_id,cnpj,isin,ticker,fund_name,cvm_segment,evidence,valid_from,valid_to,first_observed_at,confidence)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
             params![
                 id.0,
-                kind,
-                value.to_ascii_uppercase(),
+                cnpj,
+                isin,
+                input.ticker.as_deref(),
+                input.fund_name,
+                input.cvm_segment,
+                input.evidence,
                 input.valid_from.map(|d| d.to_string()),
                 input.valid_to.map(|d| d.to_string()),
-                input.evidence,
                 observed_at.to_rfc3339(),
                 confidence,
             ],
         )?;
+        Ok(())
+    })();
+    match result {
+        Ok(()) => conn.execute_batch("RELEASE SAVEPOINT fii_identity_mapping")?,
+        Err(error) => {
+            let _ = conn.execute_batch(
+                "ROLLBACK TO SAVEPOINT fii_identity_mapping; RELEASE SAVEPOINT fii_identity_mapping",
+            );
+            return Err(error.into());
+        }
     }
-    transaction.execute(
-        "INSERT OR IGNORE INTO fii_identity_registry
-         (fund_id,cnpj,isin,ticker,fund_name,cvm_segment,evidence,valid_from,valid_to,first_observed_at,confidence)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
-        params![id.0,cnpj,isin,input.ticker.as_deref(),input.fund_name,input.cvm_segment,
-            input.evidence,input.valid_from.map(|d|d.to_string()),input.valid_to.map(|d|d.to_string()),observed_at.to_rfc3339(),confidence],
-    )?;
-    transaction.commit()?;
     Ok(id)
 }
 
@@ -285,10 +317,13 @@ pub fn acquire_and_ingest(
     let staging = staging_root.join(unique);
     fs::create_dir_all(&staging)?;
     let stem = period.file_stem();
-    if !refresh {
-        if let Some(existing) = newest_snapshot_archive(conn, archive_root, &stem)? {
-            fs::copy(existing, staging.join(format!("{stem}.ZIP")))?;
-        }
+    let cached_archive = if refresh {
+        None
+    } else {
+        newest_snapshot_archive(conn, archive_root, &stem)?
+    };
+    if let Some(existing) = cached_archive {
+        fs::copy(existing, staging.join(format!("{stem}.ZIP")))?;
     }
     let cache = rsb3::cotahist::Cache {
         dir: staging.clone(),
@@ -307,6 +342,7 @@ pub fn acquire_and_ingest(
     if !immutable_archive.exists() {
         fs::write(&immutable_archive, &zip_bytes)?;
     }
+    verify_archive_hash(&immutable_archive, &sha)?;
     let crate_manifest = staging.join(format!("{}.manifest.json", period.file_stem()));
     if crate_manifest.exists() {
         let immutable_manifest = snapshot_dir.join(format!("{sha}.rsb3.manifest.json"));
@@ -389,8 +425,6 @@ pub fn acquire_and_ingest(
         for quote in &fii_quotes {
             let fund_id = identity_map.get(&quote.isin).and_then(|id| id.clone());
             if let Some(id) = &fund_id {
-                tx.execute("UPDATE fii_identity_aliases SET confidence='crosschecked_cotahist' WHERE fund_id=?1 AND identifier_type='isin' AND identifier_value=?2",params![id,quote.isin])?;
-                tx.execute("UPDATE fii_identity_registry SET confidence='crosschecked_cotahist' WHERE fund_id=?1 AND isin=?2",params![id,quote.isin])?;
                 alias_stmt.execute(params![
                     id,
                     quote.ticker,
@@ -479,12 +513,12 @@ pub fn ingest_cvm_monthly_year(
     let downloader = ResourceDownloader::default();
     let source = FiiReportDataSource::new(&ckan, &downloader);
     let resource = source.resource(FiiReportDataset::Monthly, year)?;
-    let retrieved_at = Utc::now();
-    let staging = root.join(format!(
-        ".staging/cvm-{year}-{}.zip",
-        retrieved_at.timestamp_nanos_opt().unwrap_or_default()
-    ));
+    let staging_token = Utc::now().timestamp_nanos_opt().unwrap_or_default();
+    let staging = root.join(format!(".staging/cvm-{year}-{}.zip", staging_token));
     let download = downloader.download(&resource, &staging, force)?;
+    // Stamp after the artifact has arrived: this is the earliest point at which
+    // this run can defend that MIDAS had the complete source bytes in hand.
+    let retrieved_at = Utc::now();
     let bytes = fs::read(&download.path)?;
     let sha = hex(&Sha256::digest(&bytes));
     let snapshot_id = format!("cvm-fii-monthly:{}:{sha}", resource.id);
@@ -495,63 +529,160 @@ pub fn ingest_cvm_monthly_year(
         }
         fs::copy(&download.path, &immutable_path)?;
     }
+    verify_archive_hash(&immutable_path, &sha)?;
     let source_modified_at = resource.last_modified.clone();
     let extraction = root.join(format!("cvm/extracted-{year}-{sha}"));
     let archive = FiiMonthlyArchive::parse_zip(&immutable_path, &extraction, year)?;
-    conn.execute(
-        "INSERT OR IGNORE INTO fii_source_snapshots
+    conn.execute_batch("SAVEPOINT fii_cvm_source_ingest")?;
+    let persisted = (|| -> Result<usize, Box<dyn std::error::Error>> {
+        conn.execute(
+            "INSERT OR IGNORE INTO fii_source_snapshots
          (snapshot_id,source,resource_id,original_filename,requested_period,retrieved_at,
           source_modified_at,sha256,size_bytes,local_path,parser_version,schema_version,
           ingestion_status,record_count)
-         VALUES (?1,'CVM',?2,?3,?4,?5,?6,?7,?8,?9,'midas-cvm-adapter-v1','cvm-fii-monthly-v1','parsing',?10)",
-        params![snapshot_id,resource.id,resource.name.unwrap_or_else(||format!("inf_mensal_fii_{year}.zip")),
-            year.to_string(),retrieved_at.to_rfc3339(),source_modified_at,sha,
-            bytes.len() as i64,immutable_path.to_string_lossy(),archive.general.len() as i64],
-    )?;
-    for row in &archive.general {
-        if let Some(isin) = row.isin.as_deref().filter(|value| value.trim().len() == 12) {
-            let input = IdentityInput {
-                cnpj: row.cnpj.clone(),
-                isin: isin.into(),
-                ticker: None,
-                fund_name: row.name.clone(),
-                cvm_segment: row.segment.clone(),
-                evidence: format!(
-                    "CVM fii-doc-inf_mensal snapshot {snapshot_id}, reference {} version {}",
-                    row.reference_date, row.version
-                ),
-                valid_from: None,
-                valid_to: None,
-                source_verified: true,
-            };
-            let id = save_identity(conn, &input, retrieved_at)?;
-            conn.execute(
+          VALUES (?1,'CVM',?2,?3,?4,?5,?6,?7,?8,?9,?10,'cvm-fii-monthly-v1','parsing',?11)",
+            params![
+                snapshot_id,
+                resource.id,
+                resource
+                    .name
+                    .unwrap_or_else(|| format!("inf_mensal_fii_{year}.zip")),
+                year.to_string(),
+                retrieved_at.to_rfc3339(),
+                source_modified_at,
+                sha,
+                bytes.len() as i64,
+                immutable_path.to_string_lossy(),
+                CVM_PARSER_VERSION,
+                archive.general.len() as i64
+            ],
+        )?;
+        advance_legacy_cvm_availability(conn, &snapshot_id, &sha, retrieved_at)?;
+        for row in &archive.general {
+            if let Some(isin) = row.isin.as_deref().filter(|value| value.trim().len() == 12) {
+                let input = IdentityInput {
+                    cnpj: row.cnpj.clone(),
+                    isin: isin.into(),
+                    ticker: None,
+                    fund_name: row.name.clone(),
+                    cvm_segment: row.segment.clone(),
+                    evidence: format!(
+                        "CVM fii-doc-inf_mensal snapshot {snapshot_id}, reference {} version {}",
+                        row.reference_date, row.version
+                    ),
+                    valid_from: None,
+                    valid_to: None,
+                    source_verified: true,
+                };
+                let id = save_identity(conn, &input, retrieved_at)?;
+                conn.execute(
                 "INSERT OR IGNORE INTO fii_fund_metadata
                  (fund_id,cnpj,name,cvm_segment,reference_date,filing_version,available_at,ingested_at,source_snapshot_id)
                  VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
                 params![id.0,normalize_cnpj(&row.cnpj)?,row.name,row.segment,row.reference_date.to_string(),
                     row.version,retrieved_at.to_rfc3339(),retrieved_at.to_rfc3339(),snapshot_id],
             )?;
+            }
+        }
+        let summaries = crate::investing::fii_pipeline::ingest_monthly_archive_with_snapshot(
+            conn,
+            &archive,
+            retrieved_at,
+            retrieved_at,
+            Some(&sha),
+        )?;
+        conn.execute(
+            "UPDATE fii_source_snapshots SET ingestion_status='complete' WHERE snapshot_id=?1",
+            [snapshot_id],
+        )?;
+        Ok(summaries.iter().map(|summary| summary.persisted_rows).sum())
+    })();
+    match persisted {
+        Ok(count) => {
+            conn.execute_batch("RELEASE SAVEPOINT fii_cvm_source_ingest")?;
+            let _ = fs::remove_file(&staging);
+            let _ = fs::remove_dir_all(extraction);
+            Ok(count)
+        }
+        Err(error) => {
+            let _ = conn.execute_batch(
+                "ROLLBACK TO SAVEPOINT fii_cvm_source_ingest; RELEASE SAVEPOINT fii_cvm_source_ingest",
+            );
+            Err(error)
         }
     }
-    let summaries = crate::investing::fii_pipeline::ingest_monthly_archive_with_snapshot(
-        conn,
-        &archive,
-        retrieved_at,
-        retrieved_at,
-        Some(&sha),
-    )?;
-    conn.execute(
-        "UPDATE fii_source_snapshots SET ingestion_status='complete' WHERE snapshot_id=?1",
-        [snapshot_id],
-    )?;
-    let _ = fs::remove_file(&staging);
-    let _ = fs::remove_dir_all(extraction);
-    Ok(summaries.iter().map(|summary| summary.persisted_rows).sum())
 }
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn verify_archive_hash(path: &Path, expected: &str) -> Result<(), CotahistError> {
+    let actual = hex(&Sha256::digest(fs::read(path)?));
+    if actual != expected {
+        return Err(CotahistError::SnapshotPath(format!(
+            "SHA-256 mismatch for {}: expected {expected}, got {actual}",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+/// Old CVM importer rows stamped retrieval before starting the download. On the
+/// first re-capture under v2, move those known-bad availability bounds forward
+/// to this verified completed-download time. Advancing is conservative and does
+/// not claim that the archive became public at the re-capture time.
+fn advance_legacy_cvm_availability(
+    conn: &Connection,
+    snapshot_id: &str,
+    sha: &str,
+    recaptured_at: DateTime<Utc>,
+) -> Result<(), CotahistError> {
+    let parser: Option<String> = conn
+        .query_row(
+            "SELECT parser_version FROM fii_source_snapshots WHERE snapshot_id=?1",
+            [snapshot_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if parser.as_deref() != Some(LEGACY_CVM_PARSER_VERSION) {
+        return Ok(());
+    }
+    let timestamp = recaptured_at.to_rfc3339();
+    let revision_suffix = format!("%:snapshot:{sha}");
+    let evidence_pattern = format!("%{snapshot_id}%");
+    conn.execute(
+        "UPDATE fii_source_snapshots SET retrieved_at=?1,parser_version=?2,
+         diagnostics_json='[\"legacy availability advanced to verified re-capture time\"]'
+         WHERE snapshot_id=?3 AND parser_version=?4",
+        params![
+            timestamp,
+            CVM_PARSER_VERSION,
+            snapshot_id,
+            LEGACY_CVM_PARSER_VERSION
+        ],
+    )?;
+    conn.execute(
+        "UPDATE fii_filing_observations SET available_at=?1
+         WHERE source='CVM' AND revision_id LIKE ?2",
+        params![timestamp, revision_suffix],
+    )?;
+    conn.execute(
+        "UPDATE fii_fund_metadata SET available_at=?1
+         WHERE source_snapshot_id=?2",
+        params![timestamp, snapshot_id],
+    )?;
+    conn.execute(
+        "UPDATE fii_identity_aliases SET first_observed_at=?1
+         WHERE confidence='source_evidenced' AND evidence LIKE ?2",
+        params![timestamp, evidence_pattern],
+    )?;
+    conn.execute(
+        "UPDATE fii_identity_registry SET first_observed_at=?1
+         WHERE confidence='source_evidenced' AND evidence LIKE ?2",
+        params![timestamp, evidence_pattern],
+    )?;
+    Ok(())
 }
 
 fn normalized_brl(raw_cents: i64, quotation_factor: i64) -> Result<f64, CotahistError> {
@@ -568,13 +699,12 @@ fn newest_snapshot_archive(
     root: &Path,
     stem: &str,
 ) -> Result<Option<std::path::PathBuf>, CotahistError> {
-    let cached:Option<String>=conn.query_row(
-        "SELECT local_path FROM fii_source_snapshots WHERE source=?1 AND resource_id=?2 AND ingestion_status='complete' ORDER BY retrieved_at DESC LIMIT 1",
-        params![SOURCE,stem],|row|row.get(0)).optional()?;
-    if let Some(path) = cached {
-        if Path::new(&path).exists() {
-            return Ok(Some(path.into()));
-        }
+    let cached: Option<(String, String)> = conn.query_row(
+        "SELECT local_path,sha256 FROM fii_source_snapshots WHERE source=?1 AND resource_id=?2 AND ingestion_status='complete' ORDER BY retrieved_at DESC LIMIT 1",
+        params![SOURCE,stem],|row|Ok((row.get(0)?,row.get(1)?))).optional()?;
+    if let Some((path, sha)) = cached.filter(|(path, _)| Path::new(path).exists()) {
+        verify_archive_hash(Path::new(&path), &sha)?;
+        return Ok(Some(path.into()));
     }
     let dir = root.join(stem);
     if !dir.exists() {
@@ -589,7 +719,14 @@ fn newest_snapshot_archive(
         })
         .collect::<Vec<_>>();
     files.sort();
-    Ok(files.pop())
+    if let Some(path) = files.pop() {
+        if let Some(expected) = path.file_stem().and_then(|value| value.to_str()) {
+            verify_archive_hash(&path, expected)?;
+        }
+        Ok(Some(path))
+    } else {
+        Ok(None)
+    }
 }
 
 fn column<'a, T: 'static>(
@@ -690,18 +827,30 @@ pub fn report(
     let mut statement = conn.prepare(
         "SELECT o.fund_id, o.ticker, o.isin, o.trading_date, o.close_cents, o.close_brl,
          o.traded_quantity, o.financial_volume_cents, o.number_of_trades, o.snapshot_id,
-         (SELECT identifier_value FROM fii_identity_aliases a WHERE a.fund_id=o.fund_id AND a.identifier_type='cnpj' ORDER BY a.first_observed_at LIMIT 1),
-         (SELECT evidence FROM fii_identity_aliases a WHERE a.fund_id=o.fund_id AND a.identifier_type='isin' AND a.identifier_value=o.isin ORDER BY a.first_observed_at LIMIT 1),
-         (SELECT confidence FROM fii_identity_aliases a WHERE a.fund_id=o.fund_id AND a.identifier_type='isin' AND a.identifier_value=o.isin ORDER BY a.first_observed_at LIMIT 1),
+         (SELECT identifier_value FROM fii_identity_aliases a WHERE a.fund_id=o.fund_id AND a.identifier_type='cnpj' AND a.first_observed_at<=?1 ORDER BY a.first_observed_at LIMIT 1),
+         (SELECT evidence FROM fii_identity_aliases a WHERE a.fund_id=o.fund_id AND a.identifier_type='isin' AND a.identifier_value=o.isin AND a.first_observed_at<=?1 ORDER BY a.first_observed_at LIMIT 1),
+         (SELECT confidence FROM fii_identity_aliases a WHERE a.fund_id=o.fund_id AND a.identifier_type='isin' AND a.identifier_value=o.isin AND a.first_observed_at<=?1 ORDER BY a.first_observed_at LIMIT 1),
          COALESCE((SELECT name FROM fii_fund_metadata m WHERE m.fund_id=o.fund_id AND m.available_at<=?1 ORDER BY m.available_at DESC,m.reference_date DESC LIMIT 1),
                   (SELECT fund_name FROM fii_identity_registry i WHERE i.fund_id=o.fund_id AND i.first_observed_at<=?1 ORDER BY i.first_observed_at DESC LIMIT 1)),
          COALESCE((SELECT cvm_segment FROM fii_fund_metadata m WHERE m.fund_id=o.fund_id AND m.available_at<=?1 ORDER BY m.available_at DESC,m.reference_date DESC LIMIT 1),
                   (SELECT cvm_segment FROM fii_identity_registry i WHERE i.fund_id=o.fund_id AND i.first_observed_at<=?1 ORDER BY i.first_observed_at DESC LIMIT 1)),
-         (SELECT MIN(quotation_factor) FROM fii_cotahist_observations x WHERE x.fund_id=o.fund_id AND x.ingested_at<=?1),
-         (SELECT MAX(quotation_factor) FROM fii_cotahist_observations x WHERE x.fund_id=o.fund_id AND x.ingested_at<=?1)
+         (SELECT MIN(x.quotation_factor) FROM fii_cotahist_observations x
+          JOIN fii_source_snapshots xs ON xs.snapshot_id=x.snapshot_id
+          WHERE x.fund_id=o.fund_id AND xs.retrieved_at<=?1 AND x.trading_date<=?2),
+         (SELECT MAX(x.quotation_factor) FROM fii_cotahist_observations x
+          JOIN fii_source_snapshots xs ON xs.snapshot_id=x.snapshot_id
+          WHERE x.fund_id=o.fund_id AND xs.retrieved_at<=?1 AND x.trading_date<=?2)
          FROM fii_cotahist_observations o
          JOIN fii_source_snapshots source_snapshot ON source_snapshot.snapshot_id=o.snapshot_id
          WHERE o.fund_id IS NOT NULL AND source_snapshot.retrieved_at<=?1
+           AND o.trading_date<=?2
+           AND EXISTS (
+             SELECT 1 FROM fii_identity_aliases known
+             WHERE known.fund_id=o.fund_id AND known.identifier_type='isin'
+               AND known.identifier_value=o.isin AND known.first_observed_at<=?1
+               AND (known.valid_from IS NULL OR known.valid_from<=o.trading_date)
+               AND (known.valid_to IS NULL OR known.valid_to>=o.trading_date)
+           )
          ORDER BY o.fund_id,o.trading_date,source_snapshot.retrieved_at ASC,o.snapshot_id ASC",
     )?;
     type ReportRow = (
@@ -723,27 +872,30 @@ pub fn report(
         Option<i64>,
     );
     let mut funds: BTreeMap<String, Vec<ReportRow>> = BTreeMap::new();
-    let rows = statement.query_map([as_of.to_rfc3339()], |r| {
-        Ok((
-            r.get(0)?,
-            r.get(1)?,
-            r.get(2)?,
-            r.get(3)?,
-            r.get(4)?,
-            r.get(5)?,
-            r.get(6)?,
-            r.get(7)?,
-            r.get(8)?,
-            r.get(9)?,
-            r.get(10)?,
-            r.get(11)?,
-            r.get(12)?,
-            r.get(13)?,
-            r.get(14)?,
-            r.get(15)?,
-            r.get(16)?,
-        ))
-    })?;
+    let rows = statement.query_map(
+        params![as_of.to_rfc3339(), as_of.date_naive().to_string()],
+        |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+                r.get(8)?,
+                r.get(9)?,
+                r.get(10)?,
+                r.get(11)?,
+                r.get(12)?,
+                r.get(13)?,
+                r.get(14)?,
+                r.get(15)?,
+                r.get(16)?,
+            ))
+        },
+    )?;
     for row in rows {
         let (
             id,
@@ -804,7 +956,7 @@ pub fn report(
         }
         let cvm_reports =
             crate::investing::fii_pipeline::monthly_metrics_as_of(conn, &FiiId(id.clone()), as_of)
-                .unwrap_or_default()
+                .map_err(|error| CotahistError::CvmMetrics(error.to_string()))?
                 .into_iter()
                 .map(|m| {
                     let aligned=align_market_to_cvm(conn,&id,m.reference_date,m.nav_per_share,as_of,m.diagnostics);
@@ -814,7 +966,9 @@ pub fn report(
                     submission_date:m.submission_date.map(|date|date.to_string()),
                     availability_basis:m.availability_basis,
                     filing_version: m.filing_version,
+                    source_revision_id: m.source_revision_id,
                     nav_per_share: m.nav_per_share,
+                    nav_method: m.nav_method,
                     reported_monthly_yield: m.reported_monthly_distribution_yield,
                     aligned_market_date:aligned.date, aligned_raw_close_brl:aligned.close_brl,
                     price_to_nav:aligned.price_to_nav,aligned_market_snapshot:aligned.snapshot,
@@ -893,7 +1047,23 @@ pub fn report(
         }
         reports.sort_by(|a, b| a.ticker.cmp(&b.ticker));
     }
-    let unresolved_market_rows: i64=conn.query_row("SELECT COUNT(*) FROM (SELECT DISTINCT o.ticker,o.isin,o.trading_date,o.market_type FROM fii_cotahist_observations o JOIN fii_source_snapshots s ON s.snapshot_id=o.snapshot_id WHERE o.fund_id IS NULL AND s.retrieved_at<=?1)",[as_of.to_rfc3339()],|r|r.get(0))?;
+    let unresolved_market_rows: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM (
+           SELECT DISTINCT o.ticker,o.isin,o.trading_date,o.market_type
+           FROM fii_cotahist_observations o
+           JOIN fii_source_snapshots s ON s.snapshot_id=o.snapshot_id
+           WHERE s.retrieved_at<=?1 AND o.trading_date<=?2
+             AND (o.fund_id IS NULL OR NOT EXISTS (
+               SELECT 1 FROM fii_identity_aliases known
+               WHERE known.fund_id=o.fund_id AND known.identifier_type='isin'
+                 AND known.identifier_value=o.isin AND known.first_observed_at<=?1
+                 AND (known.valid_from IS NULL OR known.valid_from<=o.trading_date)
+                 AND (known.valid_to IS NULL OR known.valid_to>=o.trading_date)
+             ))
+         )",
+        params![as_of.to_rfc3339(), as_of.date_naive().to_string()],
+        |row| row.get(0),
+    )?;
     Ok(FiiDataReport {
         as_of,
         funds: reports,
@@ -921,11 +1091,28 @@ fn align_market_to_cvm(
     mut diagnostics: Vec<String>,
 ) -> AlignedMarket {
     let end = month_end(reference_date);
+    if end > as_of.date_naive() {
+        diagnostics.push("reporting month-end is after as_of; P/NAV is unavailable".into());
+        return AlignedMarket {
+            date: None,
+            close_brl: None,
+            price_to_nav: None,
+            snapshot: None,
+            diagnostics,
+        };
+    }
     let start = end - chrono::Duration::days(5);
     let result: Result<(String, f64, String), rusqlite::Error> = conn.query_row(
         "SELECT o.trading_date,o.close_brl,o.snapshot_id FROM fii_cotahist_observations o
          JOIN fii_source_snapshots s ON s.snapshot_id=o.snapshot_id
          WHERE o.fund_id=?1 AND o.trading_date BETWEEN ?2 AND ?3 AND s.retrieved_at<=?4
+           AND EXISTS (
+             SELECT 1 FROM fii_identity_aliases known
+             WHERE known.fund_id=o.fund_id AND known.identifier_type='isin'
+               AND known.identifier_value=o.isin AND known.first_observed_at<=?4
+               AND (known.valid_from IS NULL OR known.valid_from<=o.trading_date)
+               AND (known.valid_to IS NULL OR known.valid_to>=o.trading_date)
+           )
          ORDER BY o.trading_date DESC,s.retrieved_at DESC LIMIT 1",
         params![
             fund_id,
@@ -1040,7 +1227,187 @@ mod tests {
     }
 
     #[test]
-    fn identical_snapshot_ingestion_is_idempotent_and_corrections_are_distinct() {
+    fn content_addressed_snapshot_files_are_rechecked_on_reuse() {
+        let path = std::env::temp_dir().join(format!(
+            "midas-fii-snapshot-{}-{}.zip",
+            std::process::id(),
+            Utc::now().timestamp_nanos_opt().unwrap_or_default()
+        ));
+        fs::write(&path, b"original zip bytes").unwrap();
+        let expected = hex(&Sha256::digest(b"original zip bytes"));
+        assert!(verify_archive_hash(&path, &expected).is_ok());
+        fs::write(&path, b"changed bytes").unwrap();
+        assert!(
+            verify_archive_hash(&path, &expected)
+                .unwrap_err()
+                .to_string()
+                .contains("SHA-256 mismatch")
+        );
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn identity_mapping_savepoint_rolls_back_partial_aliases() {
+        let conn = Connection::open_in_memory().unwrap();
+        init(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TRIGGER reject_registry BEFORE INSERT ON fii_identity_registry
+             BEGIN SELECT RAISE(ABORT, 'fixture failure'); END;",
+        )
+        .unwrap();
+        let input = IdentityInput {
+            cnpj: "11.728.688/0001-47".into(),
+            isin: "BRHGLGCTF004".into(),
+            ticker: Some("HGLG11".into()),
+            fund_name: None,
+            cvm_segment: None,
+            evidence: "synthetic rollback fixture".into(),
+            valid_from: None,
+            valid_to: None,
+            source_verified: false,
+        };
+        assert!(save_identity(&conn, &input, Utc::now()).is_err());
+        let aliases: i64 = conn
+            .query_row("SELECT COUNT(*) FROM fii_identity_aliases", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(aliases, 0);
+    }
+
+    #[test]
+    fn legacy_cvm_availability_is_advanced_on_verified_recapture() {
+        let conn = Connection::open_in_memory().unwrap();
+        init(&conn).unwrap();
+        let snapshot_id = "cvm-fii-monthly:resource:abc";
+        let old = "2026-11-18T12:00:00+00:00";
+        conn.execute(
+            "INSERT INTO fii_source_snapshots
+             (snapshot_id,source,resource_id,original_filename,requested_period,retrieved_at,
+              sha256,size_bytes,local_path,parser_version,schema_version,ingestion_status)
+             VALUES(?1,'CVM','resource','a.zip','2025',?2,'abc',1,'a.zip',?3,'v1','complete')",
+            params![snapshot_id, old, LEGACY_CVM_PARSER_VERSION],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO fii_filing_observations
+             (fund_id,reference_date,available_at,ingested_at,source,dataset,filing_version,revision_id,payload_json)
+             VALUES('cnpj:11728688000147','2025-01-01',?1,?1,'CVM','fii_inf_mensal_geral','1','1:snapshot:abc','{}')",
+            [old],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO fii_fund_metadata
+             (fund_id,cnpj,reference_date,filing_version,available_at,ingested_at,source_snapshot_id)
+             VALUES('cnpj:11728688000147','11728688000147','2025-01-01','1',?1,?1,?2)",
+            params![old, snapshot_id],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO fii_identity_aliases
+             (fund_id,identifier_type,identifier_value,evidence,first_observed_at,confidence)
+             VALUES('cnpj:11728688000147','isin','BRHGLGCTF004',?1,?2,'source_evidenced')",
+            params![format!("evidence from {snapshot_id}"), old],
+        )
+        .unwrap();
+        let recaptured = DateTime::parse_from_rfc3339("2026-11-19T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        advance_legacy_cvm_availability(&conn, snapshot_id, "abc", recaptured).unwrap();
+        let snapshot: (String, String) = conn
+            .query_row(
+                "SELECT retrieved_at,parser_version FROM fii_source_snapshots WHERE snapshot_id=?1",
+                [snapshot_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(snapshot.0, recaptured.to_rfc3339());
+        assert_eq!(snapshot.1, CVM_PARSER_VERSION);
+        let filing_available: String = conn
+            .query_row(
+                "SELECT available_at FROM fii_filing_observations WHERE revision_id='1:snapshot:abc'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(filing_available, recaptured.to_rfc3339());
+        let alias_observed: String = conn
+            .query_row(
+                "SELECT first_observed_at FROM fii_identity_aliases WHERE identifier_type='isin'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(alias_observed, recaptured.to_rfc3339());
+    }
+
+    #[test]
+    fn as_of_report_gates_market_rows_by_trade_date_and_mapping_knowledge_time() {
+        let conn = Connection::open_in_memory().unwrap();
+        init(&conn).unwrap();
+        let retrieved = "2025-01-03T12:00:00+00:00";
+        conn.execute(
+            "INSERT INTO fii_source_snapshots
+             (snapshot_id,source,resource_id,original_filename,requested_period,retrieved_at,
+              sha256,size_bytes,local_path,parser_version,schema_version,ingestion_status)
+             VALUES('snap','B3_COTAHIST','COTAHIST_A2025','a.zip','COTAHIST_A2025',?1,
+              'sha',1,'a.zip','rsb3/0.1.0','v1','complete')",
+            [retrieved],
+        )
+        .unwrap();
+        let observed_later = "2025-01-10T12:00:00+00:00";
+        conn.execute(
+            "INSERT INTO fii_identity_aliases
+             (fund_id,identifier_type,identifier_value,valid_from,evidence,first_observed_at,confidence)
+             VALUES('cnpj:11728688000147','isin','BRHGLGCTF004','2020-01-01','CVM fixture',?1,'source_evidenced')",
+            [observed_later],
+        )
+        .unwrap();
+        for (date, cents) in [("2025-01-02", 15_000_i64), ("2025-01-12", 16_000_i64)] {
+            conn.execute(
+                "INSERT INTO fii_cotahist_observations
+                 (snapshot_id,fund_id,ticker,isin,trading_date,bdi_code,market_type,security_name,
+                  security_specification,currency,open_cents,high_cents,low_cents,average_cents,
+                  close_cents,best_bid_cents,best_ask_cents,number_of_trades,traded_quantity,
+                  financial_volume_cents,quotation_factor,open_brl,high_brl,low_brl,average_brl,
+                  close_brl,ingested_at)
+                 VALUES('snap','cnpj:11728688000147','HGLG11','BRHGLGCTF004',?1,'12',10,'HGLG',
+                  'FII','BRL',?2,?2,?2,?2,?2,0,0,1,10,?2,1,?3,?3,?3,?3,?3,?4)",
+                rusqlite::params![date, cents, cents as f64 / 100.0, retrieved],
+            )
+            .unwrap();
+        }
+
+        let before_mapping = report(
+            &conn,
+            DateTime::parse_from_rfc3339("2025-01-08T23:59:59Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            None,
+        )
+        .unwrap();
+        assert!(before_mapping.funds.is_empty());
+        assert_eq!(before_mapping.unresolved_market_rows, 1);
+
+        let after_mapping = report(
+            &conn,
+            DateTime::parse_from_rfc3339("2025-01-11T23:59:59Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            None,
+        )
+        .unwrap();
+        assert_eq!(after_mapping.funds.len(), 1);
+        assert_eq!(after_mapping.funds[0].observations, 1);
+        assert_eq!(
+            after_mapping.funds[0].last_trading_date.as_deref(),
+            Some("2025-01-02")
+        );
+        assert_eq!(after_mapping.unresolved_market_rows, 0);
+    }
+
+    #[test]
+    fn snapshot_table_preserves_multiple_content_hash_revisions() {
         let conn = Connection::open_in_memory().unwrap();
         init(&conn).unwrap();
         let input = IdentityInput {

@@ -219,8 +219,10 @@ pub struct FiiReportDataSource<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DownloadedReportSnapshot {
     pub download: DownloadOutcome,
-    /// CKAN resource modification time for this exact archive snapshot.
-    pub available_at: chrono::DateTime<chrono::Utc>,
+    /// MIDAS's first defensible knowledge time: after the download completed.
+    pub retrieved_at: chrono::DateTime<chrono::Utc>,
+    /// CKAN resource metadata only; it is not a row-level publication time.
+    pub source_modified_at: Option<String>,
     pub resource_id: String,
 }
 
@@ -280,19 +282,12 @@ impl<'a> FiiReportDataSource<'a> {
         force: bool,
     ) -> Result<DownloadedReportSnapshot, CvmError> {
         let resource = self.resource(dataset, year)?;
-        let modified = resource.last_modified.as_deref().ok_or_else(|| {
-            CvmError::Api(format!(
-                "CVM resource {} has no last_modified timestamp",
-                resource.id
-            ))
-        })?;
-        let available_at = chrono::DateTime::parse_from_rfc3339(modified)
-            .map_err(|error| CvmError::Api(format!("invalid last_modified timestamp: {error}")))?
-            .with_timezone(&chrono::Utc);
+        let source_modified_at = resource.last_modified.clone();
         let download = self.downloader.download(&resource, destination, force)?;
         Ok(DownloadedReportSnapshot {
             download,
-            available_at,
+            retrieved_at: chrono::Utc::now(),
+            source_modified_at,
             resource_id: resource.id,
         })
     }

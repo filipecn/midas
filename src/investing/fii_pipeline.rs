@@ -63,6 +63,10 @@ mod tests {
             normalize_cnpj("00.332.266/0001-31").unwrap(),
             "00332266000131"
         );
+        assert_eq!(
+            normalize_cnpj("12.ABC.345/01DE-67").unwrap(),
+            "12ABC34501DE67"
+        );
         assert!(normalize_cnpj("too-short").is_err());
     }
 
@@ -89,6 +93,11 @@ mod tests {
         let mut metrics = monthly_metrics_as_of(&conn, &id, as_of).unwrap().remove(0);
         assert_eq!(metrics.fund.cnpj.as_deref(), Some("00332266000131"));
         assert_eq!(metrics.nav_per_share, Some(173.93928738435));
+        assert_eq!(
+            metrics.nav_method.as_deref(),
+            Some("Valor_Patrimonial_Cotas")
+        );
+        assert!(!metrics.source_revision_id.is_empty());
         assert_eq!(metrics.reported_monthly_distribution_yield, Some(0.002871));
 
         let market = MarketObservation {
@@ -157,6 +166,54 @@ mod tests {
                 .any(|item| item.contains("source key is ambiguous"))
         }));
     }
+
+    #[test]
+    fn duplicate_companion_rows_are_not_arbitrarily_joined() {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::fii::init(&conn).unwrap();
+        let mut source = archive("1", None);
+        let mut conflicting = source.complement[0].clone();
+        conflicting
+            .values
+            .insert("Valor_Patrimonial_Cotas".into(), "999.0".into());
+        source.complement.push(conflicting);
+        let available = Utc.with_ymd_and_hms(2025, 2, 20, 12, 0, 0).unwrap();
+        let summaries = ingest_monthly_archive(&conn, &source, available, available).unwrap();
+        assert_eq!(summaries[0].unmatched_complement_rows, 2);
+        let metrics = monthly_metrics_as_of(&conn, &summaries[0].fund_id, available).unwrap();
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].nav_per_share, None);
+        assert!(
+            metrics[0]
+                .diagnostics
+                .iter()
+                .any(|item| item.contains("monthly complement table is missing"))
+        );
+    }
+
+    #[test]
+    fn conflicting_nav_sources_are_reported_and_direct_value_is_selected() {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::fii::init(&conn).unwrap();
+        let mut source = archive("1", None);
+        source.complement[0]
+            .values
+            .insert("Valor_Patrimonial_Cotas".into(), "200.0".into());
+        let available = Utc.with_ymd_and_hms(2025, 2, 20, 12, 0, 0).unwrap();
+        let summaries = ingest_monthly_archive(&conn, &source, available, available).unwrap();
+        let metrics = monthly_metrics_as_of(&conn, &summaries[0].fund_id, available).unwrap();
+        assert_eq!(metrics[0].nav_per_share, Some(200.0));
+        assert_eq!(
+            metrics[0].nav_method.as_deref(),
+            Some("Valor_Patrimonial_Cotas")
+        );
+        assert!(
+            metrics[0]
+                .diagnostics
+                .iter()
+                .any(|item| item.contains("direct NAV/share and equity/shares fallback differ"))
+        );
+    }
 }
 
 const SOURCE: &str = "CVM";
@@ -187,8 +244,8 @@ pub struct IngestionSummary {
 }
 
 /// Download one CKAN-backed annual CVM archive and persist its monthly FII rows.
-/// `available_at` is the CKAN `last_modified` for the exact archive snapshot;
-/// the row-level `Data_Entrega` is preserved in the source payload separately.
+/// Availability is conservatively set to the MIDAS first-capture time after the
+/// archive download completes. CKAN `last_modified` remains source metadata.
 pub fn ingest_monthly_year(
     conn: &Connection,
     ckan: &CkanClient,
@@ -207,7 +264,7 @@ pub fn ingest_monthly_year(
         force_download,
     )?;
     let archive = FiiMonthlyArchive::parse_zip(snapshot.download.path, extraction_dir, year)?;
-    ingest_monthly_archive(conn, &archive, snapshot.available_at, ingested_at)
+    ingest_monthly_archive(conn, &archive, snapshot.retrieved_at, ingested_at)
 }
 
 /// Normalize formatted or unformatted numeric CNPJs without guessing a fund identity.
@@ -234,6 +291,21 @@ fn report_key(cnpj: &str, reference_date: NaiveDate, version: &str) -> (String, 
         reference_date,
         version.trim().to_owned(),
     )
+}
+
+fn unique_rows_by_key<T>(
+    rows: &[T],
+    key: impl Fn(&T) -> (String, NaiveDate, String),
+) -> HashMap<(String, NaiveDate, String), &T> {
+    let mut grouped = HashMap::<(String, NaiveDate, String), Vec<&T>>::new();
+    for row in rows {
+        grouped.entry(key(row)).or_default().push(row);
+    }
+    grouped
+        .into_iter()
+        .filter(|(_, values)| values.len() == 1)
+        .map(|(key, values)| (key, values[0]))
+        .collect()
 }
 
 fn validate_general(row: &FiiMonthlyGeneralRow) -> Result<FiiId, FiiPipelineError> {
@@ -301,16 +373,12 @@ fn ingest_monthly_archive_inner(
     let mut by_fund: BTreeMap<FiiId, IngestionSummary> = BTreeMap::new();
     let mut matched_assets = HashMap::new();
     let mut matched_complement = HashMap::new();
-    let assets_by_key = archive
-        .assets
-        .iter()
-        .map(|row| (report_key(&row.cnpj, row.reference_date, &row.version), row))
-        .collect::<HashMap<_, _>>();
-    let complement_by_key = archive
-        .complement
-        .iter()
-        .map(|row| (report_key(&row.cnpj, row.reference_date, &row.version), row))
-        .collect::<HashMap<_, _>>();
+    let assets_by_key = unique_rows_by_key(&archive.assets, |row| {
+        report_key(&row.cnpj, row.reference_date, &row.version)
+    });
+    let complement_by_key = unique_rows_by_key(&archive.complement, |row| {
+        report_key(&row.cnpj, row.reference_date, &row.version)
+    });
     let general_key_counts = archive.general.iter().fold(
         HashMap::<(String, NaiveDate, String), usize>::new(),
         |mut counts, row| {
@@ -367,46 +435,42 @@ fn ingest_monthly_archive_inner(
         )?;
         summary.persisted_rows += 1;
 
-        let can_join_detail = general_key_counts.get(&key).copied().unwrap_or_default() == 1;
-        if can_join_detail {
-            if let Some(assets) = assets_by_key.get(&key) {
-                matched_assets.insert(key.clone(), true);
-                fii::save_filing(
-                    conn,
-                    &FilingObservation {
-                        fund_id: fund_id.clone(),
-                        reference_date: general.reference_date,
-                        available_at,
-                        ingested_at,
-                        source: SOURCE.into(),
-                        dataset: ASSETS_DATASET.into(),
-                        filing_version: filing_version.clone(),
-                        revision_id: revision_id.clone(),
-                        payload_json: serde_json::to_string(assets)?,
-                    },
-                )?;
-                summary.persisted_rows += 1;
-            }
+        let unique_general = general_key_counts.get(&key).copied().unwrap_or_default() == 1;
+        if let Some(assets) = assets_by_key.get(&key).filter(|_| unique_general) {
+            matched_assets.insert(key.clone(), true);
+            fii::save_filing(
+                conn,
+                &FilingObservation {
+                    fund_id: fund_id.clone(),
+                    reference_date: general.reference_date,
+                    available_at,
+                    ingested_at,
+                    source: SOURCE.into(),
+                    dataset: ASSETS_DATASET.into(),
+                    filing_version: filing_version.clone(),
+                    revision_id: revision_id.clone(),
+                    payload_json: serde_json::to_string(assets)?,
+                },
+            )?;
+            summary.persisted_rows += 1;
         }
-        if can_join_detail {
-            if let Some(complement) = complement_by_key.get(&key) {
-                matched_complement.insert(key, true);
-                fii::save_filing(
-                    conn,
-                    &FilingObservation {
-                        fund_id: fund_id.clone(),
-                        reference_date: general.reference_date,
-                        available_at,
-                        ingested_at,
-                        source: SOURCE.into(),
-                        dataset: COMPLEMENT_DATASET.into(),
-                        filing_version,
-                        revision_id: revision_id.clone(),
-                        payload_json: serde_json::to_string(complement)?,
-                    },
-                )?;
-                summary.persisted_rows += 1;
-            }
+        if let Some(complement) = complement_by_key.get(&key).filter(|_| unique_general) {
+            matched_complement.insert(key, true);
+            fii::save_filing(
+                conn,
+                &FilingObservation {
+                    fund_id: fund_id.clone(),
+                    reference_date: general.reference_date,
+                    available_at,
+                    ingested_at,
+                    source: SOURCE.into(),
+                    dataset: COMPLEMENT_DATASET.into(),
+                    filing_version,
+                    revision_id: revision_id.clone(),
+                    payload_json: serde_json::to_string(complement)?,
+                },
+            )?;
+            summary.persisted_rows += 1;
         }
     }
 
@@ -447,7 +511,7 @@ fn monthly_reports_as_of(
     conn: &Connection,
     fund_id: &FiiId,
     as_of: DateTime<Utc>,
-) -> Result<Vec<(FiiMonthlyReport, DateTime<Utc>, DateTime<Utc>)>, FiiPipelineError> {
+) -> Result<Vec<(FiiMonthlyReport, String, DateTime<Utc>, DateTime<Utc>)>, FiiPipelineError> {
     let filings = fii::filings_as_of(conn, fund_id, as_of)?;
     let mut grouped: BTreeMap<
         (NaiveDate, String),
@@ -460,7 +524,7 @@ fn monthly_reports_as_of(
         ),
     > = BTreeMap::new();
     for filing in filings {
-        if filing.source != SOURCE {
+        if filing.source != SOURCE || filing.reference_date > as_of.date_naive() {
             continue;
         }
         let key = (filing.reference_date, filing.revision_id.clone());
@@ -508,7 +572,9 @@ fn monthly_reports_as_of(
     }
     Ok(by_reference
         .into_values()
-        .map(|(_, report, available_at, ingested_at)| (report, available_at, ingested_at))
+        .map(|(revision, report, available_at, ingested_at)| {
+            (report, revision, available_at, ingested_at)
+        })
         .collect())
 }
 
@@ -533,6 +599,9 @@ pub fn monthly_metrics_as_of(
 ) -> Result<Vec<FiiMonthlyMetrics>, FiiPipelineError> {
     let mut duplicate_versions = HashMap::<(NaiveDate, String), usize>::new();
     for filing in fii::filings_as_of(conn, fund_id, as_of)? {
+        if filing.reference_date > as_of.date_naive() {
+            continue;
+        }
         if filing.source == SOURCE && filing.dataset == GENERAL_DATASET {
             *duplicate_versions
                 .entry((
@@ -543,7 +612,9 @@ pub fn monthly_metrics_as_of(
         }
     }
     let mut results = Vec::new();
-    for (report, available_at, ingested_at) in monthly_reports_as_of(conn, fund_id, as_of)? {
+    for (report, source_revision_id, available_at, ingested_at) in
+        monthly_reports_as_of(conn, fund_id, as_of)?
+    {
         let mut diagnostics = Vec::new();
         if duplicate_versions
             .get(&(
@@ -563,7 +634,7 @@ pub fn monthly_metrics_as_of(
             "Data_Entrega is missing; availability uses the first MIDAS capture timestamp".into()
         });
         let complement = report.complement.as_ref();
-        let nav_per_share = complement
+        let direct_nav = complement
             .and_then(|row| {
                 parse_finite(
                     row.values
@@ -571,21 +642,36 @@ pub fn monthly_metrics_as_of(
                         .map(String::as_str),
                 )
             })
-            .filter(|value| *value > 0.0)
-            .or_else(|| {
-                let equity = complement.and_then(|row| {
-                    parse_finite(row.values.get("Patrimonio_Liquido").map(String::as_str))
-                });
-                let shares = complement.and_then(|row| {
-                    parse_finite(row.values.get("Cotas_Emitidas").map(String::as_str))
-                });
-                match (equity, shares) {
-                    (Some(equity), Some(shares)) if equity > 0.0 && shares > 0.0 => {
-                        Some(equity / shares)
-                    }
-                    _ => None,
-                }
-            });
+            .filter(|value| *value > 0.0);
+        let equity = complement
+            .and_then(|row| parse_finite(row.values.get("Patrimonio_Liquido").map(String::as_str)));
+        let shares = complement
+            .and_then(|row| parse_finite(row.values.get("Cotas_Emitidas").map(String::as_str)));
+        let fallback_nav = match (equity, shares) {
+            (Some(equity), Some(shares)) if equity > 0.0 && shares > 0.0 => Some(equity / shares),
+            _ => None,
+        };
+        if let (Some(direct), Some(fallback)) = (direct_nav, fallback_nav) {
+            let relative_difference = (direct - fallback).abs() / direct;
+            if relative_difference > 0.001 {
+                diagnostics.push(format!(
+                    "direct NAV/share and equity/shares fallback differ by {:.3}%",
+                    relative_difference * 100.0
+                ));
+            }
+        }
+        let (nav_per_share, nav_method) = if let Some(value) = direct_nav {
+            diagnostics.push("NAV/share uses source field Valor_Patrimonial_Cotas".into());
+            (Some(value), Some("Valor_Patrimonial_Cotas".into()))
+        } else if let Some(value) = fallback_nav {
+            diagnostics.push("NAV/share uses Patrimonio_Liquido / Cotas_Emitidas fallback".into());
+            (
+                Some(value),
+                Some("Patrimonio_Liquido/Cotas_Emitidas".into()),
+            )
+        } else {
+            (None, None)
+        };
         if complement.is_none() {
             diagnostics.push("monthly complement table is missing".into());
         }
@@ -625,9 +711,11 @@ pub fn monthly_metrics_as_of(
             submission_date: report.general.submission_date,
             availability_basis: "midas_first_capture".into(),
             filing_version: report.general.version.clone(),
+            source_revision_id,
             reported_mandate: report.general.mandate.clone(),
             reported_segment: report.general.segment.clone(),
             nav_per_share,
+            nav_method,
             reported_monthly_distribution_yield,
             price_to_nav: None,
             market_price_date: None,

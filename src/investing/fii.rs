@@ -29,9 +29,11 @@ pub struct FiiMonthlyMetrics {
     pub submission_date: Option<NaiveDate>,
     pub availability_basis: String,
     pub filing_version: String,
+    pub source_revision_id: String,
     pub reported_mandate: Option<String>,
     pub reported_segment: Option<String>,
     pub nav_per_share: Option<f64>,
+    pub nav_method: Option<String>,
     /// Source-reported percentage value; its precise unit convention is not inferred.
     pub reported_monthly_distribution_yield: Option<f64>,
     pub price_to_nav: Option<f64>,

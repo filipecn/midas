@@ -2,7 +2,7 @@
 
 ## Status
 
-The first reproducible CVM monthly-report and B3 COTAHIST acquisition path is implemented and exposed through the existing clap CLI. This is a price-and-filing foundation, not a complete total-return data set: no validated historical distribution adapter is available, so cash yield and total return remain unavailable.
+The first reproducible CVM monthly-report and B3 COTAHIST acquisition path is implemented and exposed through the existing clap CLI. This is a price-and-filing foundation, not a complete total-return data set: no validated historical distribution adapter is available, so cash yield and total return remain unavailable. The post-implementation audit and integrity findings are in `FII_CODE_AUDIT.md`, `FII_DATA_INTEGRITY_REVIEW.md`, and `FII_NEXT_STEPS.md`.
 
 ## Architecture changes
 
@@ -24,11 +24,11 @@ The adapter checks schema names and Arrow types from the actual crate. The crate
 
 ## Identity and point-in-time semantics
 
-The stable key is `cnpj:<14 normalized digits>`. CVM monthly report CNPJ/ISIN pairs populate the evidence-backed identity registry. BDI 12 filters FII market records; ISIN is the join key and ticker is stored as a time-dated observed alias. Unresolved market rows remain in storage and are counted in the report. A JSON identity file is also available for source-evidenced mappings; its evidence is retained and its status remains `configured` until COTAHIST confirms the ISIN.
+The stable key is `cnpj:<14 normalized characters>`. CVM monthly report CNPJ/ISIN pairs populate the evidence-backed identity registry. BDI 12 filters FII market records; ISIN is the join key and ticker is stored as a time-dated observed alias. Unresolved market rows remain in storage and are counted in the report. A JSON identity file is also available for configured mappings; its evidence and configured confidence are retained rather than rewritten when a matching COTAHIST row is later observed. Report queries require the identity evidence to have been observed by `as_of` and to be valid for the trading date.
 
 CVM `Data_Entrega` is preserved as a date and is not interpreted as a publication timestamp. CVM delivery-dataset joins and receipt-time semantics remain unverified. Filing `available_at` is the first MIDAS capture time; `ingested_at` is kept separately. A changed CVM ZIP hash creates separate filing revision IDs, while same-hash ingestion is idempotent. B3 COTAHIST observations are available from their snapshot retrieval time. CKAN `last_modified` is retained as source metadata only.
 
-P/NAV uses the CVM reference date as a reporting month, selects the last B3 close on or before calendar month-end, requires the price to be no more than five calendar days stale, and requires the source snapshot to be available by the requested `as_of`. The report records the aligned date and market snapshot. No exchange calendar is present, so weekends/holidays are not classified as missing sessions. CVM-reported monthly yield is kept separate from calculated distribution yield. No total return is calculated.
+P/NAV uses the CVM reference date as a reporting month, selects the last B3 close on or before calendar month-end, requires the price to be no more than five calendar days stale, and requires both source snapshot and reporting month-end to be admissible by the requested `as_of`. The report records the aligned date and market snapshot, CVM source revision, and NAV method. No exchange calendar is present, so weekends/holidays are not classified as missing sessions. CVM-reported monthly yield is kept separate from calculated distribution yield. No total return is calculated.
 
 ## Run the workflow
 
@@ -59,6 +59,10 @@ The report was generated for `as_of=2026-11-18`. It contains raw close, normaliz
 - There is no exchange trading calendar, so session-level gaps are not asserted.
 - The three example mappings were validated as technical examples. A broader 3–5-fund cohort is configurable and has not been approved as a homogeneous peer universe.
 
+## Audit follow-up
+
+The code audit added as-of identity/trading-date gates, SHA verification on snapshot reuse, atomic CVM source writes, legacy CVM timestamp repair on recapture, unique-only companion joins, NAV-source reconciliation, and explicit NAV/revision provenance. Reingest a legacy CVM archive to advance its earlier pre-download availability bound conservatively.
+
 ## Tests and checks
 
-Fixture tests cover the actual `rsb3` schema, BDI/ISIN classification, cent and quotation-factor conversion, CVM blank dates, ambiguous Fund/Class rows, revision preservation, and month-end alignment. See the final implementation summary for the latest `cargo check`, `cargo test`, and Clippy results.
+Fixture tests cover the actual `rsb3` schema, BDI/ISIN classification, cent and quotation-factor conversion, CVM blank dates, ambiguous general/companion rows, revision preservation, as-of identity gating, legacy availability repair, snapshot hash verification, and month-end alignment. The latest audit run passed `cargo check`, 104 tests, and `cargo clippy --all-targets`; Clippy still reports repository warnings.
