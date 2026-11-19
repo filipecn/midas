@@ -26,6 +26,8 @@ pub struct FiiMonthlyMetrics {
     pub reference_date: NaiveDate,
     pub available_at: DateTime<Utc>,
     pub ingested_at: DateTime<Utc>,
+    pub submission_date: Option<NaiveDate>,
+    pub availability_basis: String,
     pub filing_version: String,
     pub reported_mandate: Option<String>,
     pub reported_segment: Option<String>,

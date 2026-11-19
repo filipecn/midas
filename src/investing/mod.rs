@@ -170,6 +170,7 @@ impl MarketDataFetcher {
 }
 
 pub mod fii;
+pub mod fii_cotahist;
 pub mod fii_pipeline;
 pub mod fundamental_view;
 pub mod market_view;

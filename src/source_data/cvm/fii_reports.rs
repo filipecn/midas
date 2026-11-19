@@ -3,7 +3,7 @@ use super::{
     CkanClient, CvmError, CvmResource, DownloadOutcome, ResourceDownloader, ResourceFormat,
 };
 use chrono::NaiveDate;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::{collections::HashMap, io::Read, path::Path};
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -17,10 +17,12 @@ pub struct FiiMonthlyGeneralRow {
     #[serde(rename = "Versao")]
     pub version: String,
     #[serde(rename = "Data_Entrega", default)]
+    #[serde(deserialize_with = "deserialize_optional_date")]
     pub submission_date: Option<NaiveDate>,
     #[serde(rename = "Nome_Fundo_Classe", default)]
     pub name: Option<String>,
     #[serde(rename = "Data_Funcionamento", default)]
+    #[serde(deserialize_with = "deserialize_optional_date")]
     pub operation_start_date: Option<NaiveDate>,
     #[serde(rename = "Codigo_ISIN", default)]
     pub isin: Option<String>,
@@ -59,9 +61,27 @@ pub struct FiiMonthlyComplementRow {
     #[serde(rename = "Versao")]
     pub version: String,
     #[serde(rename = "Data_Informacao_Numero_Cotistas", default)]
+    #[serde(deserialize_with = "deserialize_optional_date")]
     pub investor_count_date: Option<NaiveDate>,
     #[serde(flatten)]
     pub values: HashMap<String, String>,
+}
+
+fn deserialize_optional_date<'de, D>(deserializer: D) -> Result<Option<NaiveDate>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?;
+    match value
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        None => Ok(None),
+        Some(value) => NaiveDate::parse_from_str(value, "%Y-%m-%d")
+            .map(Some)
+            .map_err(serde::de::Error::custom),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -106,16 +126,22 @@ impl FiiMonthlyArchive {
             .ok_or_else(|| CvmError::Api(format!("monthly ZIP is missing {assets_name}")))?;
         let complement_file = find(&complement_name)
             .ok_or_else(|| CvmError::Api(format!("monthly ZIP is missing {complement_name}")))?;
+        let general = parse_fii_monthly_general(std::fs::File::open(general_file)?, options)
+            .collect::<Result<_, _>>()
+            .map_err(|error| CvmError::Api(format!("failed parsing {general_name}: {error}")))?;
+        let assets = parse_fii_monthly_assets(std::fs::File::open(assets_file)?, options)
+            .collect::<Result<_, _>>()
+            .map_err(|error| CvmError::Api(format!("failed parsing {assets_name}: {error}")))?;
+        let complement =
+            parse_fii_monthly_complement(std::fs::File::open(complement_file)?, options)
+                .collect::<Result<_, _>>()
+                .map_err(|error| {
+                    CvmError::Api(format!("failed parsing {complement_name}: {error}"))
+                })?;
         Ok(Self {
-            general: parse_fii_monthly_general(std::fs::File::open(general_file)?, options)
-                .collect::<Result<_, _>>()?,
-            assets: parse_fii_monthly_assets(std::fs::File::open(assets_file)?, options)
-                .collect::<Result<_, _>>()?,
-            complement: parse_fii_monthly_complement(
-                std::fs::File::open(complement_file)?,
-                options,
-            )
-            .collect::<Result<_, _>>()?,
+            general,
+            assets,
+            complement,
         })
     }
 }
@@ -150,8 +176,13 @@ macro_rules! row_parser {
                         (key.to_owned(), serde_json::Value::String(value.to_owned()))
                     })
                     .collect::<serde_json::Map<_, _>>();
-                serde_json::from_value(serde_json::Value::Object(row))
-                    .map_err(|error| csv::Error::from(std::io::Error::other(error.to_string())))
+                serde_json::from_value(serde_json::Value::Object(row)).map_err(|error| {
+                    let line = record
+                        .position()
+                        .map(|position| position.line())
+                        .unwrap_or_default();
+                    csv::Error::from(std::io::Error::other(format!("row {line}: {error}")))
+                })
             })
         }
     };
@@ -300,5 +331,23 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(row.values["Patrimonio_Liquido"], "487055921.63");
+    }
+
+    #[test]
+    fn empty_optional_dates_in_real_cvm_csv_fields_are_preserved_as_none() {
+        let csv = "Tipo_Fundo_Classe;CNPJ_Fundo_Classe;Data_Referencia;Versao;Data_Entrega;Data_Funcionamento\nFundo;00.332.266/0001-31;2025-01-01;1;;\n";
+        let row = parse_fii_monthly_general(csv.as_bytes(), options())
+            .next()
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.submission_date, None);
+        assert_eq!(row.operation_start_date, None);
+        let csv = "CNPJ_Fundo_Classe;Data_Referencia;Versao;Data_Informacao_Numero_Cotistas;Patrimonio_Liquido\n00.332.266/0001-31;2025-01-01;1;;100.00\n";
+        let row = parse_fii_monthly_complement(csv.as_bytes(), options())
+            .next()
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.investor_count_date, None);
+        assert_eq!(row.values["Patrimonio_Liquido"], "100.00");
     }
 }

@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use rusqlite::Connection;
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::{
@@ -135,6 +136,27 @@ mod tests {
                 .any(|item| item.contains("Data_Entrega is missing"))
         );
     }
+
+    #[test]
+    fn ambiguous_fund_and_class_rows_are_preserved_without_guessing_companion_join() {
+        let conn = Connection::open_in_memory().unwrap();
+        crate::db::fii::init(&conn).unwrap();
+        let mut source = archive("1", None);
+        let mut class_row = source.general[0].clone();
+        class_row.fund_type = Some("Classe".into());
+        class_row.name = Some("FII Teste - Classe Única".into());
+        source.general.push(class_row);
+        let available = Utc::now();
+        let summaries = ingest_monthly_archive(&conn, &source, available, available).unwrap();
+        assert_eq!(summaries[0].persisted_rows, 2);
+        assert_eq!(summaries[0].unmatched_complement_rows, 1);
+        let metrics = monthly_metrics_as_of(&conn, &summaries[0].fund_id, available).unwrap();
+        assert!(metrics.iter().any(|row| {
+            row.diagnostics
+                .iter()
+                .any(|item| item.contains("source key is ambiguous"))
+        }));
+    }
 }
 
 const SOURCE: &str = "CVM";
@@ -229,9 +251,32 @@ pub fn ingest_monthly_archive(
     source_snapshot_available_at: DateTime<Utc>,
     ingested_at: DateTime<Utc>,
 ) -> Result<Vec<IngestionSummary>, FiiPipelineError> {
+    ingest_monthly_archive_with_snapshot(
+        conn,
+        archive,
+        source_snapshot_available_at,
+        ingested_at,
+        None,
+    )
+}
+
+/// Snapshot-aware importer. Including the artifact hash in the revision key
+/// preserves corrected archives even when CVM keeps its filing version number.
+pub fn ingest_monthly_archive_with_snapshot(
+    conn: &Connection,
+    archive: &FiiMonthlyArchive,
+    source_snapshot_available_at: DateTime<Utc>,
+    ingested_at: DateTime<Utc>,
+    snapshot_revision: Option<&str>,
+) -> Result<Vec<IngestionSummary>, FiiPipelineError> {
     conn.execute_batch("SAVEPOINT fii_monthly_ingest")?;
-    let result =
-        ingest_monthly_archive_inner(conn, archive, source_snapshot_available_at, ingested_at);
+    let result = ingest_monthly_archive_inner(
+        conn,
+        archive,
+        source_snapshot_available_at,
+        ingested_at,
+        snapshot_revision,
+    );
     match result {
         Ok(summaries) => {
             conn.execute_batch("RELEASE SAVEPOINT fii_monthly_ingest")?;
@@ -251,6 +296,7 @@ fn ingest_monthly_archive_inner(
     archive: &FiiMonthlyArchive,
     source_snapshot_available_at: DateTime<Utc>,
     ingested_at: DateTime<Utc>,
+    snapshot_revision: Option<&str>,
 ) -> Result<Vec<IngestionSummary>, FiiPipelineError> {
     let mut by_fund: BTreeMap<FiiId, IngestionSummary> = BTreeMap::new();
     let mut matched_assets = HashMap::new();
@@ -265,6 +311,15 @@ fn ingest_monthly_archive_inner(
         .iter()
         .map(|row| (report_key(&row.cnpj, row.reference_date, &row.version), row))
         .collect::<HashMap<_, _>>();
+    let general_key_counts = archive.general.iter().fold(
+        HashMap::<(String, NaiveDate, String), usize>::new(),
+        |mut counts, row| {
+            *counts
+                .entry(report_key(&row.cnpj, row.reference_date, &row.version))
+                .or_default() += 1;
+            counts
+        },
+    );
 
     for general in &archive.general {
         let fund_id = validate_general(general)?;
@@ -280,6 +335,22 @@ fn ingest_monthly_archive_inner(
         let available_at = source_snapshot_available_at;
         let filing_version = Some(general.version.clone());
         let general_payload = serde_json::to_string(general)?;
+        let row_revision = if general_key_counts.get(&key).copied().unwrap_or_default() > 1 {
+            let digest = Sha256::digest(general_payload.as_bytes());
+            format!(
+                "{}:row:{}",
+                general.version,
+                digest
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>()
+            )
+        } else {
+            general.version.clone()
+        };
+        let revision_id = snapshot_revision
+            .map(|snapshot| format!("{row_revision}:snapshot:{snapshot}"))
+            .unwrap_or(row_revision);
         fii::save_filing(
             conn,
             &FilingObservation {
@@ -290,47 +361,52 @@ fn ingest_monthly_archive_inner(
                 source: SOURCE.into(),
                 dataset: GENERAL_DATASET.into(),
                 filing_version: filing_version.clone(),
-                revision_id: general.version.clone(),
+                revision_id: revision_id.clone(),
                 payload_json: general_payload,
             },
         )?;
         summary.persisted_rows += 1;
 
-        if let Some(assets) = assets_by_key.get(&key) {
-            matched_assets.insert(key.clone(), true);
-            fii::save_filing(
-                conn,
-                &FilingObservation {
-                    fund_id: fund_id.clone(),
-                    reference_date: general.reference_date,
-                    available_at,
-                    ingested_at,
-                    source: SOURCE.into(),
-                    dataset: ASSETS_DATASET.into(),
-                    filing_version: filing_version.clone(),
-                    revision_id: general.version.clone(),
-                    payload_json: serde_json::to_string(assets)?,
-                },
-            )?;
-            summary.persisted_rows += 1;
+        let can_join_detail = general_key_counts.get(&key).copied().unwrap_or_default() == 1;
+        if can_join_detail {
+            if let Some(assets) = assets_by_key.get(&key) {
+                matched_assets.insert(key.clone(), true);
+                fii::save_filing(
+                    conn,
+                    &FilingObservation {
+                        fund_id: fund_id.clone(),
+                        reference_date: general.reference_date,
+                        available_at,
+                        ingested_at,
+                        source: SOURCE.into(),
+                        dataset: ASSETS_DATASET.into(),
+                        filing_version: filing_version.clone(),
+                        revision_id: revision_id.clone(),
+                        payload_json: serde_json::to_string(assets)?,
+                    },
+                )?;
+                summary.persisted_rows += 1;
+            }
         }
-        if let Some(complement) = complement_by_key.get(&key) {
-            matched_complement.insert(key, true);
-            fii::save_filing(
-                conn,
-                &FilingObservation {
-                    fund_id: fund_id.clone(),
-                    reference_date: general.reference_date,
-                    available_at,
-                    ingested_at,
-                    source: SOURCE.into(),
-                    dataset: COMPLEMENT_DATASET.into(),
-                    filing_version,
-                    revision_id: general.version.clone(),
-                    payload_json: serde_json::to_string(complement)?,
-                },
-            )?;
-            summary.persisted_rows += 1;
+        if can_join_detail {
+            if let Some(complement) = complement_by_key.get(&key) {
+                matched_complement.insert(key, true);
+                fii::save_filing(
+                    conn,
+                    &FilingObservation {
+                        fund_id: fund_id.clone(),
+                        reference_date: general.reference_date,
+                        available_at,
+                        ingested_at,
+                        source: SOURCE.into(),
+                        dataset: COMPLEMENT_DATASET.into(),
+                        filing_version,
+                        revision_id: revision_id.clone(),
+                        payload_json: serde_json::to_string(complement)?,
+                    },
+                )?;
+                summary.persisted_rows += 1;
+            }
         }
     }
 
@@ -455,15 +531,37 @@ pub fn monthly_metrics_as_of(
     fund_id: &FiiId,
     as_of: DateTime<Utc>,
 ) -> Result<Vec<FiiMonthlyMetrics>, FiiPipelineError> {
+    let mut duplicate_versions = HashMap::<(NaiveDate, String), usize>::new();
+    for filing in fii::filings_as_of(conn, fund_id, as_of)? {
+        if filing.source == SOURCE && filing.dataset == GENERAL_DATASET {
+            *duplicate_versions
+                .entry((
+                    filing.reference_date,
+                    filing.filing_version.unwrap_or_default(),
+                ))
+                .or_default() += 1;
+        }
+    }
     let mut results = Vec::new();
     for (report, available_at, ingested_at) in monthly_reports_as_of(conn, fund_id, as_of)? {
         let mut diagnostics = Vec::new();
-        if report.general.submission_date.is_none() {
-            diagnostics.push(
-                "CVM Data_Entrega is missing; availability uses the CKAN archive snapshot timestamp"
-                    .into(),
-            );
+        if duplicate_versions
+            .get(&(
+                report.general.reference_date,
+                report.general.version.clone(),
+            ))
+            .copied()
+            .unwrap_or_default()
+            > 1
+        {
+            diagnostics.push("multiple CVM general rows share this CNPJ, reference period, and version; companion tables are not joined because the source key is ambiguous".into());
         }
+        diagnostics.push(if report.general.submission_date.is_some() {
+            "Data_Entrega is a date only; availability uses the first MIDAS capture timestamp"
+                .into()
+        } else {
+            "Data_Entrega is missing; availability uses the first MIDAS capture timestamp".into()
+        });
         let complement = report.complement.as_ref();
         let nav_per_share = complement
             .and_then(|row| {
@@ -524,6 +622,8 @@ pub fn monthly_metrics_as_of(
             reference_date: report.general.reference_date,
             available_at,
             ingested_at,
+            submission_date: report.general.submission_date,
+            availability_basis: "midas_first_capture".into(),
             filing_version: report.general.version.clone(),
             reported_mandate: report.general.mandate.clone(),
             reported_segment: report.general.segment.clone(),

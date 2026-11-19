@@ -173,6 +173,38 @@ struct Args {
     /// research scores all securities and includes the eligibility report
     #[arg(long, value_enum)]
     score_eligibility: Option<ScoreEligibilityPolicy>,
+
+    /// Ingest the CVM FII monthly-report archive for a year (repeatable)
+    #[arg(long = "fii-cvm-year", action = clap::ArgAction::Append)]
+    fii_cvm_years: Vec<i32>,
+
+    /// Ingest B3 COTAHIST annual archive for a year (repeatable)
+    #[arg(long = "fii-cotahist-year", action = clap::ArgAction::Append)]
+    fii_cotahist_years: Vec<i32>,
+
+    /// Ingest a single B3 COTAHIST daily archive, YYYY-MM-DD (repeatable)
+    #[arg(long = "fii-cotahist-day", action = clap::ArgAction::Append)]
+    fii_cotahist_days: Vec<String>,
+
+    /// Re-download the COTAHIST period, bypassing the last immutable archive
+    #[arg(long)]
+    fii_refresh: bool,
+
+    /// Optional JSON array of validated CNPJ/ISIN identity mappings
+    #[arg(long)]
+    fii_identities: Option<PathBuf>,
+
+    /// Optional JSON array of ticker strings restricting the generated report
+    #[arg(long)]
+    fii_cohort: Option<PathBuf>,
+
+    /// Generate a deterministic report as of an RFC3339 timestamp or YYYY-MM-DD
+    #[arg(long)]
+    fii_report_as_of: Option<String>,
+
+    /// Root directory for immutable FII source snapshots
+    #[arg(long, default_value = "data/fii/snapshots")]
+    fii_snapshot_dir: PathBuf,
 }
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug)]
@@ -485,6 +517,103 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     if args.score_eligibility.is_some() && !args.score {
         return Err("--score-eligibility requires --score".into());
+    }
+
+    let fii_requested = !args.fii_cvm_years.is_empty()
+        || !args.fii_cotahist_years.is_empty()
+        || !args.fii_cotahist_days.is_empty()
+        || args.fii_identities.is_some()
+        || args.fii_cohort.is_some()
+        || args.fii_report_as_of.is_some();
+    if args.fii_refresh
+        && args.fii_cotahist_years.is_empty()
+        && args.fii_cotahist_days.is_empty()
+        && args.fii_cvm_years.is_empty()
+    {
+        return Err("--fii-refresh requires at least one FII source period".into());
+    }
+    if fii_requested {
+        if let Some(parent) = PathBuf::from(&args.db).parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+        let db = DBConnection::new(&args.db)?;
+        investing::fii_cotahist::init(&db.conn)?;
+        let mut summaries = Vec::new();
+        let mut source_errors = Vec::new();
+        for year in &args.fii_cvm_years {
+            if !(2000..=Local::now().year()).contains(year) {
+                return Err(format!("invalid --fii-cvm-year {year}").into());
+            }
+            match investing::fii_cotahist::ingest_cvm_monthly_year(
+                &db.conn,
+                *year,
+                &args.fii_snapshot_dir,
+                args.fii_refresh,
+            ) {
+                Ok(count) => eprintln!("CVM FII monthly {year}: persisted {count} observations"),
+                Err(error) => source_errors.push(format!("CVM FII monthly {year}: {error}")),
+            }
+        }
+        if let Some(path) = &args.fii_identities {
+            let inputs: Vec<investing::fii_cotahist::IdentityInput> =
+                serde_json::from_str(&std::fs::read_to_string(path)?)?;
+            for input in inputs {
+                investing::fii_cotahist::save_identity(&db.conn, &input, chrono::Utc::now())?;
+            }
+        }
+        for year in &args.fii_cotahist_years {
+            if !(1986..=Local::now().year()).contains(year) {
+                return Err(format!("invalid --fii-cotahist-year {year}").into());
+            }
+            match investing::fii_cotahist::acquire_and_ingest(
+                &db.conn,
+                rsb3::cotahist::Period::Year(*year),
+                &args.fii_snapshot_dir.join("b3"),
+                &args.fii_snapshot_dir.join(".staging"),
+                args.fii_refresh,
+            ) {
+                Ok(summary) => summaries.push(summary),
+                Err(error) => source_errors.push(format!("B3 COTAHIST {year}: {error}")),
+            }
+        }
+        for value in &args.fii_cotahist_days {
+            let date = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")?;
+            match investing::fii_cotahist::acquire_and_ingest(
+                &db.conn,
+                rsb3::cotahist::Period::Day(date),
+                &args.fii_snapshot_dir.join("b3"),
+                &args.fii_snapshot_dir.join(".staging"),
+                args.fii_refresh,
+            ) {
+                Ok(summary) => summaries.push(summary),
+                Err(error) => source_errors.push(format!("B3 COTAHIST {date}: {error}")),
+            }
+        }
+        for error in &source_errors {
+            eprintln!("FII source ingestion warning: {error}");
+        }
+        if !summaries.is_empty() {
+            println!("{}", serde_json::to_string_pretty(&summaries)?);
+        }
+        if let Some(value) = &args.fii_report_as_of {
+            let as_of = if let Ok(timestamp) = chrono::DateTime::parse_from_rfc3339(value) {
+                timestamp.with_timezone(&chrono::Utc)
+            } else {
+                let date = chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")?;
+                date.and_hms_opt(23, 59, 59).unwrap().and_utc()
+            };
+            let cohort: Option<Vec<String>> = if let Some(path) = &args.fii_cohort {
+                let contents = std::fs::read_to_string(path)?;
+                Some(serde_json::from_str(&contents)?)
+            } else {
+                None
+            };
+            let report = investing::fii_cotahist::report(&db.conn, as_of, cohort.as_deref())?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        return Ok(());
     }
 
     if args.score || args.eligibility || args.b3_snapshot.is_some() {
