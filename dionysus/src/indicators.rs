@@ -1,7 +1,7 @@
 use crate::finance::{DiError, Sample, F64};
+use fin_primitives::signals::float::{MacdF64, RsiF64};
 use ta::indicators::{
-    BollingerBands, ExponentialMovingAverage, MovingAverageConvergenceDivergence,
-    RelativeStrengthIndex, SimpleMovingAverage, StandardDeviation,
+    BollingerBands, ExponentialMovingAverage, SimpleMovingAverage, StandardDeviation,
 };
 use ta::Next;
 
@@ -71,7 +71,6 @@ macro_rules! indicator_series_fn {
 indicator_series_fn!(exponential_moving_average_s, ExponentialMovingAverage);
 indicator_series_fn!(simple_moving_average_s, SimpleMovingAverage);
 indicator_series_fn!(standard_deviation_s, StandardDeviation);
-indicator_series_fn!(relative_strength_index_s, RelativeStrengthIndex);
 
 macro_rules! indicator_fn {
     ($name:tt, $func:ident) => {
@@ -93,7 +92,22 @@ macro_rules! indicator_fn {
 indicator_fn!(exponential_moving_average, ExponentialMovingAverage);
 indicator_fn!(simple_moving_average, SimpleMovingAverage);
 indicator_fn!(standard_deviation, StandardDeviation);
-indicator_fn!(relative_strength_index, RelativeStrengthIndex);
+
+fn relative_strength_index_s(n: usize, samples: &[Sample]) -> Result<IndicatorData, DiError> {
+    let mut rsi = RsiF64::new(n).map_err(|_| DiError::Error)?;
+    let v: Vec<f64> = samples.iter().filter_map(|s| rsi.update(s.close)).collect();
+    Ok(IndicatorData::Vector(v))
+}
+
+fn relative_strength_index(n: usize, samples: &[Sample]) -> Result<IndicatorData, DiError> {
+    match relative_strength_index_s(n, samples)? {
+        IndicatorData::Vector(v) => v
+            .last()
+            .map(|r| IndicatorData::Scalar(*r))
+            .ok_or(DiError::Error),
+        _ => Err(DiError::Error),
+    }
+}
 
 macro_rules! match_indicator {
     ($func:ident, $words:expr) => {
@@ -145,9 +159,11 @@ pub fn macd_s(
 ) -> Result<IndicatorData, DiError> {
     let mut r: Vec<Vec<f64>> = vec![Vec::new(), Vec::new()];
     let mut macd =
-        MovingAverageConvergenceDivergence::new(fast_period, slow_period, signal_period).unwrap();
+        MacdF64::talib(fast_period, slow_period, signal_period).map_err(|_| DiError::Error)?;
     for sample in samples {
-        let cur = macd.next(sample);
+        let Some(cur) = macd.update(sample.close) else {
+            continue;
+        };
         // (macd, signal, histogram)
         let ro = (cur.macd, cur.signal); //round(cur.into());
         r[0].push(ro.0);
@@ -162,12 +178,8 @@ pub fn macd(
     signal_period: usize,
     samples: &[Sample],
 ) -> Result<IndicatorData, DiError> {
-    match macd_s(
-        fast_period,
-        slow_period,
-        signal_period,
-        &samples[samples.len() - slow_period..],
-    ) {
+    match macd_s(fast_period, slow_period, signal_period, samples) {
+        Ok(IndicatorData::Matrix(r)) if r[0].is_empty() => Err(DiError::Error),
         Ok(IndicatorData::Matrix(r)) => Ok(IndicatorData::Matrix(vec![
             vec![r[0].last().unwrap().clone()],
             vec![r[1].last().unwrap().clone()],
@@ -355,5 +367,63 @@ impl Indicators {
             }
         }
         self.indicators.push(indicator.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn closes(c: &[f64]) -> Vec<Sample> {
+        c.iter()
+            .map(|&close| Sample {
+                close,
+                ..Default::default()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn rsi_matches_wilder_reference() {
+        // Wilder RSI(14) on the StockCharts sample closes, as TA-Lib RSI computes it.
+        let samples = closes(&[
+            44.34, 44.09, 44.15, 43.61, 44.33, 44.83, 45.10, 45.42, 45.84, 46.08, 45.89, 46.03,
+            45.61, 46.28, 46.28, 46.00, 46.03, 46.41, 46.22, 45.64,
+        ]);
+        let Ok(IndicatorData::Vector(v)) =
+            Indicator::RelativeStrengthIndex(14).compute_series(&samples)
+        else {
+            panic!("expected a vector");
+        };
+        let expected = [70.46, 66.25, 66.48, 69.35, 66.29, 57.92];
+        assert_eq!(v.len(), expected.len());
+        for (got, want) in v.iter().zip(expected) {
+            assert!((got - want).abs() < 0.01, "{got} != {want}");
+        }
+        let Ok(IndicatorData::Scalar(last)) =
+            Indicator::RelativeStrengthIndex(14).compute(&samples)
+        else {
+            panic!("expected a scalar");
+        };
+        assert!((last - 57.92).abs() < 0.01);
+    }
+
+    #[test]
+    fn macd_starts_where_talib_does() {
+        let samples = closes(
+            &(0..40)
+                .map(|i| 100.0 + (i as f64 * 0.7).sin() * 5.0)
+                .collect::<Vec<_>>(),
+        );
+        let Ok(IndicatorData::Matrix(m)) =
+            Indicator::MovingAverageConvergenceDivergence((12, 26, 9)).compute_series(&samples)
+        else {
+            panic!("expected a matrix");
+        };
+        // TA-Lib MACD(12, 26, 9) has a lookback of 33 bars.
+        assert_eq!(m[0].len(), samples.len() - 33);
+        assert!(Indicator::MovingAverageConvergenceDivergence((12, 26, 9))
+            .compute(&samples[..20])
+            .is_err());
     }
 }
